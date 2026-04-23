@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { ScrambleText } from "@/components/scramble-text";
 import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
+import { markChromeReady } from "@/lib/ui-chrome";
 
 const TYPE_SPEED_INITIAL_MS = 90;
 const POST_TYPE_HOLD_INITIAL_MS = 320;
 const DRAMATIC_PAUSE_MS = 1050;
 const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
 const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 700;
+/** Respiro depois do chrome aparecer antes de revelar UI secundária (ex.: PullTab). */
+const SUPPORTING_UI_REVEAL_DELAY_MS = CHROME_REVEAL_DELAY_MS + 520;
 
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
@@ -247,9 +250,14 @@ export default function Home() {
       () => setChromeVisible(true),
       initialTypingMs + CHROME_REVEAL_DELAY_MS,
     );
+    const supportingT = setTimeout(
+      () => markChromeReady(),
+      initialTypingMs + SUPPORTING_UI_REVEAL_DELAY_MS,
+    );
     return () => {
       clearTimeout(introT);
       clearTimeout(chromeT);
+      clearTimeout(supportingT);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageReady]);
@@ -787,6 +795,7 @@ export default function Home() {
           chromeVisible
             ? "pointer-events-auto translate-y-0 opacity-100"
             : "pointer-events-none -translate-y-1 opacity-0",
+          "hidden",
         )}
       >
         <Button
@@ -811,7 +820,7 @@ export default function Home() {
         </Button>
       </header>
 
-      <main className="relative flex min-h-0 flex-1 flex-col pt-[calc(env(safe-area-inset-top,0px)+3.25rem)]">
+      <main className="relative flex min-h-0 flex-1 flex-col pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         {/* HERO: layout totalmente estático. A nav do hero só muda `opacity` dos botões. */}
         <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 [scrollbar-gutter:stable]">
           <div
@@ -910,7 +919,7 @@ export default function Home() {
           <div
             className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
             style={{
-              paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.25rem)",
+              paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))",
               paddingBottom: projectsView
                 ? Math.max(projectNavBlockPx, 48)
                 : 0,

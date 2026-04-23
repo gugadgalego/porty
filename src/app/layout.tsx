@@ -4,6 +4,8 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { LanguageProvider } from "@/components/providers/language-provider";
+import { PullTab } from "@/components/pull-tab";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const sourceSerif = Source_Serif_4({
   variable: "--font-serif",
@@ -47,7 +49,12 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          <LanguageProvider defaultLocale="pt">{children}</LanguageProvider>
+          <LanguageProvider defaultLocale="pt">
+            <TooltipProvider delayDuration={180}>
+              {children}
+              <PullTab />
+            </TooltipProvider>
+          </LanguageProvider>
         </ThemeProvider>
       </body>
     </html>
