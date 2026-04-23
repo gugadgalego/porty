@@ -149,6 +149,26 @@
   }
 }
 
+/* Gooey squish: flash de brilho + pequeno overshoot de escala na troca de modo. */
+@keyframes pulltab-squish {
+  0% {
+    opacity: 0;
+    transform: scale(0.72, 1.22);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.18, 0.86);
+  }
+  58% {
+    opacity: 0.42;
+    transform: scale(0.94, 1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1, 1);
+  }
+}
+
 @layer utilities {
   .animate-caret {
     animation: caret-blink 1.05s step-end infinite;
@@ -159,6 +179,30 @@
     animation-name: char-in;
     animation-fill-mode: forwards;
     animation-timing-function: ease-out;
+  }
+
+  .animate-pulltab-squish {
+    animation: pulltab-squish 320ms cubic-bezier(0.2, 0.95, 0.25, 1.4);
+    animation-fill-mode: forwards;
+    transform-origin: center;
+  }
+
+  /**
+   * Cursor customizado usando o ícone Key (fill) do Phosphor.
+   * Cor inverte com o tema — o cursor hover é aplicado sobre a bar (bg-foreground),
+   * então precisa ser background (contraste garantido nos dois temas).
+   */
+  .cursor-keyhole {
+    cursor: url("/cursors/key-light.svg") 16 16, pointer;
+  }
+  .dark .cursor-keyhole {
+    cursor: url("/cursors/key-dark.svg") 16 16, pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulltab-squish {
+    animation: none !important;
   }
 }
 
