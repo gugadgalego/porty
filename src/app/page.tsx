@@ -14,19 +14,25 @@ const DRAMATIC_PAUSE_MS = 1050;
 const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
 const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 700;
 
-/** FLIP da nav (Design): um pouco mais ágil que 1100ms. */
-const NAV_TRANSITION_MS = 700;
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 /** Grelha de projetos: entrada em cascata (baixo → cima, um a um). */
 const PROJECT_CARD_STAGGER_MS = 70;
 const PROJECT_CARD_DURATION_MS = 420;
 const PROJECT_CARD_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
+/** Nav (Design): mesma “respiração” dos cartões — primeiro some no meio, reaparece no rodapé, depois a grid. */
+const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
+const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
+const NAV_SEQUENCE_BUFFER_MS = 40;
 /** Transição de altura do bloco de intro (troca de idioma / re-medida) + a nav acompanha no fluxo. */
 const INTRO_MIN_HEIGHT_MS = 520;
 const INTRO_BLOCK_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
-
-type NavBox = { top: number; left: number; width: number; height: number };
+/** Encolher (ex.: EN): mantém a curva que já estava agradável. */
+const INTRO_HEIGHT_SHRINK_MS = INTRO_MIN_HEIGHT_MS;
+const INTRO_HEIGHT_SHRINK_EASE = INTRO_BLOCK_EASE;
+/** Expandir (ex.: PT): mais tempo + ease-out longo no fim para não parecer “seca”. */
+const INTRO_HEIGHT_EXPAND_MS = 680;
+const INTRO_HEIGHT_EXPAND_EASE = "cubic-bezier(0.16, 1, 0.2, 1)";
 
 const projects: {
   id: string;
@@ -123,6 +129,11 @@ export default function Home() {
   const [introMinHeight, setIntroMinHeight] = React.useState<number | null>(
     null,
   );
+  const [introHeightMotion, setIntroHeightMotion] = React.useState<{
+    durationMs: number;
+    easing: string;
+  }>({ durationMs: INTRO_MIN_HEIGHT_MS, easing: INTRO_BLOCK_EASE });
+  const lastIntroMinHeightRef = React.useRef<number | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] =
     React.useState(false);
   React.useEffect(() => {
@@ -135,21 +146,35 @@ export default function Home() {
   const measurePtRef = React.useRef<HTMLDivElement | null>(null);
   const measureEnRef = React.useRef<HTMLDivElement | null>(null);
 
-  const mainRef = React.useRef<HTMLElement | null>(null);
-  const navRef = React.useRef<HTMLElement | null>(null);
-  /** FLIP: retângulo na home (fluxo) antes de ir para o rodapé. */
-  const [navFlipFrom, setNavFlipFrom] = React.useState<NavBox | null>(null);
-  /** FLIP: retângulo alvo no rodapé (após rAF). */
-  const [navAnimTarget, setNavAnimTarget] = React.useState<NavBox | null>(null);
-  /** Depois da transição: `fixed` com bottom/left/right (estável no resize). */
-  const [projectNavDocked, setProjectNavDocked] = React.useState(false);
+  const bottomNavRef = React.useRef<HTMLElement | null>(null);
+  /** Depois do stagger-in dos botões no rodapé: libera a grid (cascata dos cards). */
+  const [projectNavReadyForGrid, setProjectNavReadyForGrid] =
+    React.useState(false);
   /** Altura medida da barra fixa; padding do scroll = isto, para o conteúdo nunca passar “por baixo” da nav. */
   const [projectNavBlockPx, setProjectNavBlockPx] = React.useState(0);
   /** Após 1 rAF, dispara a cascata dos cartões (só com nav já encostada). */
   const [projectCardsRevealed, setProjectCardsRevealed] = React.useState(false);
+  /**
+   * Coreografia da transição Design:
+   *  - idle: home normal
+   *  - exiting: hero nav buttons somem (right-to-left)
+   *  - entering: bottom nav buttons aparecem (left-to-right)
+   *  - entered: grid libera
+   */
+  const [navItemPhase, setNavItemPhase] = React.useState<
+    "idle" | "exiting" | "entering" | "entered"
+  >("idle");
+  const navTransitionTimersRef = React.useRef<number[]>([]);
+
+  const clearNavTransitionTimers = React.useCallback(() => {
+    for (const id of navTransitionTimersRef.current) {
+      window.clearTimeout(id);
+    }
+    navTransitionTimersRef.current = [];
+  }, []);
 
   React.useEffect(() => {
-    if (!projectNavDocked) {
+    if (!projectNavReadyForGrid) {
       setProjectCardsRevealed(false);
       return;
     }
@@ -166,7 +191,7 @@ export default function Home() {
       cancelAnimationFrame(raf0);
       cancelAnimationFrame(raf1);
     };
-  }, [projectNavDocked, prefersReducedMotion]);
+  }, [projectNavReadyForGrid, prefersReducedMotion]);
 
   React.useEffect(() => {
     if (!languageReady) return;
@@ -238,30 +263,71 @@ export default function Home() {
 
   const shouldScrambleOnThisRender = revealKey > 0;
 
+  /** Altura do parágrafo de intro só do idioma ativo → o bloco encolhe/cresce e o flex recentraliza suavemente (min-height com transição). */
   React.useLayoutEffect(() => {
     if (!introVisible) return;
-    const pt = measurePtRef.current?.getBoundingClientRect().height ?? 0;
-    const en = measureEnRef.current?.getBoundingClientRect().height ?? 0;
-    const next = Math.ceil(Math.max(pt, en));
-    if (next > 0) setIntroMinHeight(next);
+
+    const measure = () => {
+      const pt = measurePtRef.current?.getBoundingClientRect().height ?? 0;
+      const en = measureEnRef.current?.getBoundingClientRect().height ?? 0;
+      const target = locale === "pt" ? pt : en;
+      const fallback = Math.max(pt, en);
+      const next = Math.ceil(target > 0 ? target : fallback);
+      if (next <= 0) return;
+
+      const prev = lastIntroMinHeightRef.current;
+      const delta = prev === null ? 0 : next - prev;
+      const threshold = 2;
+      if (prev === null) {
+        setIntroHeightMotion({
+          durationMs: INTRO_MIN_HEIGHT_MS,
+          easing: INTRO_BLOCK_EASE,
+        });
+      } else if (delta > threshold) {
+        setIntroHeightMotion({
+          durationMs: INTRO_HEIGHT_EXPAND_MS,
+          easing: INTRO_HEIGHT_EXPAND_EASE,
+        });
+      } else if (delta < -threshold) {
+        setIntroHeightMotion({
+          durationMs: INTRO_HEIGHT_SHRINK_MS,
+          easing: INTRO_HEIGHT_SHRINK_EASE,
+        });
+      }
+
+      lastIntroMinHeightRef.current = next;
+      setIntroMinHeight(next);
+    };
+
+    measure();
+    const ptEl = measurePtRef.current;
+    const enEl = measureEnRef.current;
+    const ro = new ResizeObserver(measure);
+    if (ptEl) ro.observe(ptEl);
+    if (enEl) ro.observe(enEl);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
   }, [introVisible, locale]);
 
-  /** Ao sair de Projetos (futuro) ou forçar reset, limpa o FLIP. */
+  /** Ao sair de Projetos (futuro) ou forçar reset, limpa timers/estado da nav. */
   React.useEffect(() => {
     if (projectsView) return;
-    setNavFlipFrom(null);
-    setNavAnimTarget(null);
-    setProjectNavDocked(false);
+    clearNavTransitionTimers();
+    setProjectNavReadyForGrid(false);
     setProjectNavBlockPx(0);
-  }, [projectsView]);
+    setNavItemPhase("idle");
+  }, [projectsView, clearNavTransitionTimers]);
 
-  /** Mede a altura real da barra (incl. safe area) → scroll não passa visível abaixo dela. */
+  /** Mede a altura real da barra fixa (incl. safe area) → scroll do #design não passa por baixo. */
   React.useEffect(() => {
-    if (!projectNavDocked) {
+    if (!projectsView) {
       setProjectNavBlockPx(0);
       return;
     }
-    const nav = navRef.current;
+    const nav = bottomNavRef.current;
     if (!nav) return;
     const update = () => {
       setProjectNavBlockPx(Math.ceil(nav.getBoundingClientRect().height));
@@ -274,76 +340,49 @@ export default function Home() {
       ro.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [projectNavDocked]);
-
-  /** FLIP: pinta 1x em `from`, no frame seguinte aplica alvo com transition. */
-  React.useEffect(() => {
-    if (!projectsView || !navFlipFrom || navAnimTarget || projectNavDocked) return;
-    if (typeof window === "undefined") return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    let cancelled = false;
-    const id = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const main = mainRef.current;
-        const nav = navRef.current;
-        if (!main || !nav) return;
-        const m = main.getBoundingClientRect();
-        const navH = nav.offsetHeight || navFlipFrom.height;
-        // Barra a largura do main, encostada ao fundo (sem insets; padding nos botões via classe).
-        const toW = m.width;
-        const toL = m.left;
-        const toTop = m.bottom - navH;
-        setNavAnimTarget({
-          top: toTop,
-          left: toL,
-          width: toW,
-          height: navH,
-        });
-      });
-    });
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(id);
-    };
-  }, [projectsView, navFlipFrom, navAnimTarget, projectNavDocked]);
-
-  /** Conclui o FLIP e amarra a nav no rodapé. */
-  React.useEffect(() => {
-    if (!navAnimTarget || projectNavDocked) return;
-    const t = window.setTimeout(() => {
-      setProjectNavDocked(true);
-      setNavAnimTarget(null);
-      setNavFlipFrom(null);
-    }, NAV_TRANSITION_MS);
-    return () => window.clearTimeout(t);
-  }, [navAnimTarget, projectNavDocked]);
+  }, [projectsView]);
 
   const handleDesignClick = React.useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       event.preventDefault();
       if (projectsView) return;
-      const nav = navRef.current;
-      if (!nav) return;
-      const r = nav.getBoundingClientRect();
-      const box: NavBox = {
-        top: r.top,
-        left: r.left,
-        width: r.width,
-        height: r.height,
-      };
       if (
         typeof window !== "undefined" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches
       ) {
         setProjectsView(true);
-        setProjectNavDocked(true);
+        setProjectNavReadyForGrid(true);
+        setNavItemPhase("entered");
         return;
       }
-      setNavFlipFrom(box);
+
+      clearNavTransitionTimers();
+      setProjectNavReadyForGrid(false);
+      setProjectCardsRevealed(false);
+      setNavItemPhase("exiting");
       setProjectsView(true);
+
+      const count = sections.length;
+      const exitTotalMs =
+        Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
+        NAV_ITEM_DURATION_MS +
+        NAV_SEQUENCE_BUFFER_MS;
+
+      const tEnter = window.setTimeout(() => {
+        setNavItemPhase("entering");
+        const enterTotalMs =
+          Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
+          NAV_ITEM_DURATION_MS +
+          NAV_SEQUENCE_BUFFER_MS;
+        const tReady = window.setTimeout(() => {
+          setNavItemPhase("entered");
+          setProjectNavReadyForGrid(true);
+        }, enterTotalMs);
+        navTransitionTimersRef.current.push(tReady);
+      }, exitTotalMs);
+      navTransitionTimersRef.current.push(tEnter);
     },
-    [projectsView],
+    [projectsView, clearNavTransitionTimers, sections.length],
   );
 
   const renderIntro = React.useCallback(
@@ -671,55 +710,83 @@ export default function Home() {
     );
   }, []);
 
-  const projectNavStyle = React.useMemo((): React.CSSProperties => {
-    if (!projectsView) return {};
-    if (projectNavDocked) {
-      return {
-        position: "fixed",
-        zIndex: 30,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        top: "auto",
-        width: "100%",
-        maxWidth: "100%",
-        margin: 0,
-      };
-    }
-    if (navAnimTarget) {
-      return {
-        position: "fixed",
-        zIndex: 30,
-        top: navAnimTarget.top,
-        left: navAnimTarget.left,
-        width: navAnimTarget.width,
-        margin: 0,
-        transition: `top ${NAV_TRANSITION_MS}ms ${NAV_EASE}, left ${NAV_TRANSITION_MS}ms ${NAV_EASE}, width ${NAV_TRANSITION_MS}ms ${NAV_EASE}`,
-      };
-    }
-    if (navFlipFrom) {
-      return {
-        position: "fixed",
-        zIndex: 30,
-        top: navFlipFrom.top,
-        left: navFlipFrom.left,
-        width: navFlipFrom.width,
-        margin: 0,
-        transition: "none",
-      };
-    }
-    return {};
-  }, [projectsView, projectNavDocked, navAnimTarget, navFlipFrom]);
+  const navContainerClass = cn(
+    "flex w-full items-stretch justify-center",
+    "px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5",
+    "bg-background",
+  );
+
+  const renderNavButtons = (opts: {
+    scope: "hero" | "bottom";
+  }) => {
+    const isHero = opts.scope === "hero";
+    return sections.map((section, idx) => {
+      const lastIdx = sections.length - 1;
+
+      let opacity = 1;
+      if (isHero) {
+        if (navItemPhase === "exiting") opacity = 0;
+        else if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 0;
+        else opacity = chromeVisible ? 1 : 0;
+      } else {
+        if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 1;
+        else opacity = 0;
+      }
+
+      let delayMs = 0;
+      if (isHero) {
+        if (navItemPhase === "exiting") {
+          delayMs = (lastIdx - idx) * NAV_ITEM_STAGGER_MS;
+        } else if (!projectsView) {
+          delayMs = chromeVisible ? idx * 130 : 0;
+        }
+      } else {
+        if (navItemPhase === "entering") {
+          delayMs = idx * NAV_ITEM_STAGGER_MS;
+        }
+      }
+
+      return (
+        <div
+          key={`${opts.scope}-${section.href}`}
+          className="flex-1"
+          style={{
+            opacity,
+            transition: `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
+            transitionDelay: `${delayMs}ms`,
+          }}
+        >
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="w-full font-mono text-[12px] tracking-wide"
+          >
+            <a
+              href={section.href}
+              onClick={
+                isHero && section.isProjects ? handleDesignClick : undefined
+              }
+              tabIndex={isHero ? (projectsView ? -1 : 0) : projectsView ? 0 : -1}
+              aria-hidden={isHero ? projectsView : !projectsView}
+            >
+              {section.label}
+            </a>
+          </Button>
+        </div>
+      );
+    });
+  };
 
   return (
     <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-background">
       <header
         className={cn(
-          "relative z-20 flex w-full items-center justify-between px-3 pt-3",
-          "transition-all duration-700 ease-out motion-reduce:transition-none",
+          "fixed inset-x-0 top-0 z-40 flex w-full items-center justify-between bg-background px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-2",
+          "transition-[opacity,transform] duration-700 ease-out motion-reduce:transition-none",
           chromeVisible
-            ? "translate-y-0 opacity-100"
-            : "-translate-y-1 opacity-0",
+            ? "pointer-events-auto translate-y-0 opacity-100"
+            : "pointer-events-none -translate-y-1 opacity-0",
         )}
       >
         <Button
@@ -744,27 +811,21 @@ export default function Home() {
         </Button>
       </header>
 
-      <main
-        ref={mainRef}
-        className="relative flex min-h-0 flex-1 flex-col"
-      >
-        {/* HERO: intro some com o fade; nav no fluxo (gap-6 = 24px) e FLIP até o rodapé */}
-        <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 items-start justify-center overflow-y-auto px-6 [scrollbar-gutter:stable]">
+      <main className="relative flex min-h-0 flex-1 flex-col pt-[calc(env(safe-area-inset-top,0px)+3.25rem)]">
+        {/* HERO: layout totalmente estático. A nav do hero só muda `opacity` dos botões. */}
+        <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 [scrollbar-gutter:stable]">
           <div
-            className="flex w-full max-w-[20rem] flex-col items-center gap-6 py-6"
-            style={{
-              paddingTop: "max(0.5rem, calc(50svh - 12rem))",
-            }}
+            className={cn(
+              "flex w-full max-w-[20rem] flex-col items-center py-6",
+              introVisible ? "gap-6" : "gap-0",
+            )}
           >
             <div
               className={cn(
-                "pointer-events-auto w-full",
-                "transition-[opacity,transform,filter] duration-500 ease-out motion-reduce:transition-none",
-                projectsView
-                  ? "pointer-events-none opacity-0 -translate-y-2 blur-[1px]"
-                  : "opacity-100 translate-y-0 blur-0",
+                "flex w-full flex-col items-center",
+                introVisible ? "gap-6" : "gap-0",
+                projectsView ? "pointer-events-none" : "pointer-events-auto",
               )}
-              aria-hidden={projectsView}
             >
               <h1
                 aria-label={welcomeFull}
@@ -795,9 +856,9 @@ export default function Home() {
               <div
                 className={cn(
                   "grid w-full",
-                  "transition-[grid-template-rows,margin-top] duration-[1200ms] ease-[cubic-bezier(0.33,1,0.68,1)]",
+                  "transition-[grid-template-rows] duration-[1200ms] ease-[cubic-bezier(0.33,1,0.68,1)]",
                   "motion-reduce:transition-none",
-                  introVisible ? "mt-6 grid-rows-[1fr]" : "mt-0 grid-rows-[0fr]",
+                  introVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                 )}
               >
                 <div className="min-h-0 overflow-hidden">
@@ -812,7 +873,7 @@ export default function Home() {
                         : undefined,
                       transition: prefersReducedMotion
                         ? "opacity 1000ms ease-out"
-                        : `min-height ${INTRO_MIN_HEIGHT_MS}ms ${INTRO_BLOCK_EASE}, opacity 1000ms ease-out`,
+                        : `min-height ${introHeightMotion.durationMs}ms ${introHeightMotion.easing}, opacity 1000ms ease-out`,
                     }}
                   >
                     {dictionary.intro.map((paragraph, idx) => (
@@ -824,69 +885,33 @@ export default function Home() {
             </div>
 
             <nav
-              ref={navRef}
               className={cn(
-                "pointer-events-auto flex w-full items-stretch justify-center",
-                !projectsView && "relative z-20",
-                projectsView && "z-20 bg-background",
-                projectsView &&
-                  "px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5",
+                navContainerClass,
+                "pointer-events-auto relative z-20",
               )}
-              style={projectNavStyle}
             >
-              {sections.map((section, idx) => (
-                <div
-                  key={section.href}
-                  className={cn(
-                    "flex-1",
-                    "transition-[transform,opacity] duration-700 ease-out motion-reduce:transition-none",
-                    chromeVisible
-                      ? "translate-y-0 opacity-100"
-                      : "translate-y-2 opacity-0",
-                  )}
-                  style={{
-                    transitionDelay: chromeVisible ? `${idx * 130}ms` : "0ms",
-                  }}
-                >
-                  <Button
-                    asChild
-                    variant="ghost"
-                    size="sm"
-                    className="w-full font-mono text-[12px] tracking-wide"
-                  >
-                    <a
-                      href={section.href}
-                      onClick={section.isProjects ? handleDesignClick : undefined}
-                    >
-                      {section.label}
-                    </a>
-                  </Button>
-                </div>
-              ))}
+              {renderNavButtons({ scope: "hero" })}
             </nav>
           </div>
         </div>
 
         <section
           id="design"
-          aria-hidden={!projectsView || !projectNavDocked}
+          aria-hidden={!projectsView || !projectNavReadyForGrid}
           className={cn(
-            "absolute inset-0 z-0 flex min-h-0 flex-col will-change-transform",
-            "transition-[transform,opacity] ease-[cubic-bezier(0.33,1,0.68,1)]",
-            !projectsView && "pointer-events-none translate-y-6 opacity-0 duration-0",
-            projectsView &&
-              !projectNavDocked &&
-              "pointer-events-none translate-y-full opacity-0 duration-0",
-            projectsView &&
-              projectNavDocked &&
-              "pointer-events-auto translate-y-0 opacity-100 duration-[480ms]",
-            "motion-reduce:duration-0",
+            "absolute inset-0 z-30 flex min-h-0 flex-col bg-background",
+            navItemPhase === "entering" ||
+              navItemPhase === "entered"
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none opacity-0",
           )}
+          style={{ transition: "opacity 0ms" }}
         >
           <div
-            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 pt-3 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
+            className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain px-3 [scrollbar-gutter:stable] motion-reduce:scroll-auto"
             style={{
-              paddingBottom: projectNavDocked
+              paddingTop: "calc(env(safe-area-inset-top, 0px) + 3.25rem)",
+              paddingBottom: projectsView
                 ? Math.max(projectNavBlockPx, 48)
                 : 0,
             }}
@@ -898,11 +923,14 @@ export default function Home() {
                   className="grid shrink-0 grid-cols-3 gap-3"
                 >
                   {projects.slice(row * 3, row * 3 + 3).map((p, col) => {
-                    const isFirstRowFirst = row === 0 && col === 0;
-                    const isFirstRowLast = row === 0 && col === 2;
+                    const lastRowIdx = 2;
+                    const isTopLeft = row === 0 && col === 0;
+                    const isTopRight = row === 0 && col === 2;
+                    const isBottomLeft = row === lastRowIdx && col === 0;
+                    const isBottomRight = row === lastRowIdx && col === 2;
                     const bottomToTopI = (2 - row) * 3 + col;
                     const cardIn =
-                      projectNavDocked &&
+                      projectNavReadyForGrid &&
                       (prefersReducedMotion || projectCardsRevealed);
                     return (
                       <a
@@ -912,17 +940,19 @@ export default function Home() {
                           "group relative min-h-0 w-full overflow-hidden bg-cover bg-center",
                           "aspect-[464/320] motion-reduce:transition-none",
                           "hover:opacity-[0.92]",
-                          isFirstRowFirst && "rounded-tl-sm",
-                          isFirstRowLast && "rounded-tr-md",
                           cardIn
                             ? "translate-y-0 opacity-100"
                             : "translate-y-7 opacity-0",
                         )}
                         style={{
                           backgroundImage: `url(${p.image})`,
+                          borderTopLeftRadius: isTopLeft ? 8 : undefined,
+                          borderTopRightRadius: isTopRight ? 8 : undefined,
+                          borderBottomLeftRadius: isBottomLeft ? 8 : undefined,
+                          borderBottomRightRadius: isBottomRight ? 8 : undefined,
                           transition: `transform ${PROJECT_CARD_DURATION_MS}ms ${PROJECT_CARD_EASE}, opacity ${PROJECT_CARD_DURATION_MS}ms ${PROJECT_CARD_EASE}`,
                           transitionDelay:
-                            projectNavDocked &&
+                            projectNavReadyForGrid &&
                             projectCardsRevealed &&
                             !prefersReducedMotion
                               ? `${bottomToTopI * PROJECT_CARD_STAGGER_MS}ms`
@@ -937,10 +967,19 @@ export default function Home() {
               ))}
             </div>
           </div>
+          <nav
+            ref={bottomNavRef}
+            className={cn(
+              navContainerClass,
+              "fixed inset-x-0 bottom-0 z-30 pointer-events-auto",
+            )}
+          >
+            {renderNavButtons({ scope: "bottom" })}
+          </nav>
         </section>
       </main>
 
-      {/* Hidden measurement to avoid height jumping on locale swap */}
+      {/* Medição invisível (PT/EN) para animar min-height só do idioma ativo e manter o hero recentralizado. */}
       {introVisible && (
         <div
           aria-hidden="true"
