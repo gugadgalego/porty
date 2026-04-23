@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
@@ -98,6 +99,7 @@ const RADIUS_MS = 170;
 const TAP_OPEN_SNAP_MS = 170;
 const TAP_OPEN_SIZE_MS = 130;
 const TAP_OPEN_RADIUS_MS = 120;
+const PULLTAB_TOOLTIP_DELAY_MS = 650;
 
 const CORNERS: readonly Corner[] = [
   "top-left",
@@ -792,7 +794,7 @@ export function PullTab() {
         }}
       />
       {isExpanded ? (
-        <>
+        <TooltipProvider delayDuration={PULLTAB_TOOLTIP_DELAY_MS}>
           <Tooltip>
             <TooltipTrigger asChild>
               <TabSlot
@@ -863,28 +865,21 @@ export function PullTab() {
             </TooltipTrigger>
             <TooltipContent side="top">{backofficeLabel}</TooltipContent>
           </Tooltip>
-        </>
+        </TooltipProvider>
       ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <TabSlot
-              className="size-full"
-              aria-label={collapsedLabel}
-              onPointerDown={(e) => beginDrag(e, handleCollapsedTap)}
-              draggable
-              dragging={dragging}
-            >
-              {edge === "right" ? (
-                <CaretLeft size={16} weight="regular" />
-              ) : (
-                <CaretRight size={16} weight="regular" />
-              )}
-            </TabSlot>
-          </TooltipTrigger>
-          <TooltipContent side={edge === "right" ? "left" : "right"}>
-            {collapsedLabel}
-          </TooltipContent>
-        </Tooltip>
+        <TabSlot
+          className="size-full"
+          aria-label={collapsedLabel}
+          onPointerDown={(e) => beginDrag(e, handleCollapsedTap)}
+          draggable
+          dragging={dragging}
+        >
+          {edge === "right" ? (
+            <CaretLeft size={16} weight="regular" />
+          ) : (
+            <CaretRight size={16} weight="regular" />
+          )}
+        </TabSlot>
       )}
     </div>
   );
