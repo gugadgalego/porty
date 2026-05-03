@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrambleText } from "@/components/scramble-text";
 import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
+import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
 
 const TYPE_SPEED_INITIAL_MS = 90;
@@ -36,68 +38,6 @@ const INTRO_HEIGHT_SHRINK_EASE = INTRO_BLOCK_EASE;
 /** Expandir (ex.: PT): mais tempo + ease-out longo no fim para não parecer “seca”. */
 const INTRO_HEIGHT_EXPAND_MS = 680;
 const INTRO_HEIGHT_EXPAND_EASE = "cubic-bezier(0.16, 1, 0.2, 1)";
-
-const projects: {
-  id: string;
-  title: string;
-  subtitle: string;
-  image: string;
-}[] = [
-  {
-    id: "p1",
-    title: "Papelzinho",
-    subtitle: "Orla — Mobile",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p2",
-    title: "SME",
-    subtitle: "Mackenzie — Web",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p3",
-    title: "Porty",
-    subtitle: "Portfolio",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p4",
-    title: "Academy",
-    subtitle: "Apple Developer Academy",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p5",
-    title: "Case #5",
-    subtitle: "Em breve",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p6",
-    title: "Case #6",
-    subtitle: "Em breve",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p7",
-    title: "Case #7",
-    subtitle: "Em breve",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p8",
-    title: "Case #8",
-    subtitle: "Em breve",
-    image: "https://paper.design/flowers.webp",
-  },
-  {
-    id: "p9",
-    title: "Case #9",
-    subtitle: "Em breve",
-    image: "https://paper.design/flowers.webp",
-  },
-];
 
 /** Anula o `Button` padrão (`inline-flex` + `nowrap`) para o texto fluir e centralizar no parágrafo. */
 const introLinkButtonClass = cn(
@@ -157,6 +97,32 @@ export default function Home() {
   const [projectNavBlockPx, setProjectNavBlockPx] = React.useState(0);
   /** Após 1 rAF, dispara a cascata dos cartões (só com nav já encostada). */
   const [projectCardsRevealed, setProjectCardsRevealed] = React.useState(false);
+  const [projects, setProjects] = React.useState<PortfolioProject[]>([]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadProjects = async () => {
+      try {
+        const res = await fetch("/api/site/projects", { cache: "no-store" });
+        const data = (await res.json()) as { projects?: PortfolioProject[] };
+        if (!cancelled && res.ok && Array.isArray(data.projects)) {
+          setProjects(data.projects);
+        }
+      } catch {
+        /* mantém lista vazia */
+      }
+    };
+    void loadProjects();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadProjects();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
   /**
    * Coreografia da transição Design:
    *  - idle: home normal
@@ -350,48 +316,69 @@ export default function Home() {
     };
   }, [projectsView]);
 
-  const handleDesignClick = React.useCallback(
-    (event: React.MouseEvent<HTMLAnchorElement>) => {
-      event.preventDefault();
-      if (projectsView) return;
-      if (
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      ) {
-        setProjectsView(true);
-        setProjectNavReadyForGrid(true);
-        setNavItemPhase("entered");
-        return;
-      }
-
-      clearNavTransitionTimers();
-      setProjectNavReadyForGrid(false);
-      setProjectCardsRevealed(false);
-      setNavItemPhase("exiting");
+  /**
+   * URL canónica para abrir a grelha de projetos na home: `/#design`
+   * (links externos, página de projeto, refresh com hash). O botão
+   * «Design» no hero continua com `preventDefault` + esta função.
+   */
+  const openDesignGrid = React.useCallback(() => {
+    if (projectsView) return;
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
       setProjectsView(true);
+      setProjectNavReadyForGrid(true);
+      setNavItemPhase("entered");
+      return;
+    }
 
-      const count = sections.length;
-      const exitTotalMs =
+    clearNavTransitionTimers();
+    setProjectNavReadyForGrid(false);
+    setProjectCardsRevealed(false);
+    setNavItemPhase("exiting");
+    setProjectsView(true);
+
+    const count = sections.length;
+    const exitTotalMs =
+      Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
+      NAV_ITEM_DURATION_MS +
+      NAV_SEQUENCE_BUFFER_MS;
+
+    const tEnter = window.setTimeout(() => {
+      setNavItemPhase("entering");
+      const enterTotalMs =
         Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
         NAV_ITEM_DURATION_MS +
         NAV_SEQUENCE_BUFFER_MS;
+      const tReady = window.setTimeout(() => {
+        setNavItemPhase("entered");
+        setProjectNavReadyForGrid(true);
+      }, enterTotalMs);
+      navTransitionTimersRef.current.push(tReady);
+    }, exitTotalMs);
+    navTransitionTimersRef.current.push(tEnter);
+  }, [projectsView, clearNavTransitionTimers, sections.length]);
 
-      const tEnter = window.setTimeout(() => {
-        setNavItemPhase("entering");
-        const enterTotalMs =
-          Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
-          NAV_ITEM_DURATION_MS +
-          NAV_SEQUENCE_BUFFER_MS;
-        const tReady = window.setTimeout(() => {
-          setNavItemPhase("entered");
-          setProjectNavReadyForGrid(true);
-        }, enterTotalMs);
-        navTransitionTimersRef.current.push(tReady);
-      }, exitTotalMs);
-      navTransitionTimersRef.current.push(tEnter);
+  const handleDesignClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      openDesignGrid();
     },
-    [projectsView, clearNavTransitionTimers, sections.length],
+    [openDesignGrid],
   );
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncHashToDesignGrid = () => {
+      if (window.location.hash !== "#design") return;
+      openDesignGrid();
+    };
+    syncHashToDesignGrid();
+    window.addEventListener("hashchange", syncHashToDesignGrid);
+    return () =>
+      window.removeEventListener("hashchange", syncHashToDesignGrid);
+  }, [openDesignGrid]);
 
   const renderIntro = React.useCallback(
     (text: string, idx: number) => {
@@ -865,7 +852,7 @@ export default function Home() {
               <div
                 className={cn(
                   "grid w-full",
-                  "transition-[grid-template-rows] duration-[1200ms] ease-[cubic-bezier(0.33,1,0.68,1)]",
+                  "transition-[grid-template-rows] duration-[640ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                   "motion-reduce:transition-none",
                   introVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                 )}
@@ -874,15 +861,23 @@ export default function Home() {
                   <div
                     className={cn(
                       "space-y-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground",
-                      introVisible ? "opacity-100" : "opacity-0",
+                      "motion-reduce:transition-none",
+                      introVisible
+                        ? "translate-y-0 opacity-100 blur-0"
+                        : cn(
+                            "opacity-0",
+                            prefersReducedMotion
+                              ? "translate-y-0 blur-0"
+                              : "translate-y-3 blur-[1.5px]",
+                          ),
                     )}
                     style={{
                       minHeight: introMinHeight
                         ? `${introMinHeight}px`
                         : undefined,
                       transition: prefersReducedMotion
-                        ? "opacity 1000ms ease-out"
-                        : `min-height ${introHeightMotion.durationMs}ms ${introHeightMotion.easing}, opacity 1000ms ease-out`,
+                        ? "opacity 320ms ease-out"
+                        : `min-height ${introHeightMotion.durationMs}ms ${introHeightMotion.easing}, opacity 900ms cubic-bezier(0.22, 1, 0.36, 1), transform 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms cubic-bezier(0.22, 1, 0.36, 1)`,
                     }}
                   >
                     {dictionary.intro.map((paragraph, idx) => (
@@ -926,54 +921,143 @@ export default function Home() {
             }}
           >
             <div className="mx-auto flex w-full max-w-[min(100%,120rem)] flex-col gap-3">
-              {[0, 1, 2].map((row) => (
-                <div
-                  key={`row-${row}`}
-                  className="grid shrink-0 grid-cols-3 gap-3"
-                >
-                  {projects.slice(row * 3, row * 3 + 3).map((p, col) => {
-                    const lastRowIdx = 2;
-                    const isTopLeft = row === 0 && col === 0;
-                    const isTopRight = row === 0 && col === 2;
-                    const isBottomLeft = row === lastRowIdx && col === 0;
-                    const isBottomRight = row === lastRowIdx && col === 2;
-                    const bottomToTopI = (2 - row) * 3 + col;
-                    const cardIn =
-                      projectNavReadyForGrid &&
-                      (prefersReducedMotion || projectCardsRevealed);
-                    return (
-                      <a
-                        key={p.id}
-                        href={`#${p.id}`}
-                        className={cn(
-                          "group relative min-h-0 w-full overflow-hidden bg-cover bg-center",
-                          "aspect-[464/320] motion-reduce:transition-none",
-                          "hover:opacity-[0.92]",
-                          cardIn
-                            ? "translate-y-0 opacity-100"
-                            : "translate-y-7 opacity-0",
-                        )}
-                        style={{
-                          backgroundImage: `url(${p.image})`,
-                          borderTopLeftRadius: isTopLeft ? 8 : undefined,
-                          borderTopRightRadius: isTopRight ? 8 : undefined,
-                          borderBottomLeftRadius: isBottomLeft ? 8 : undefined,
-                          borderBottomRightRadius: isBottomRight ? 8 : undefined,
-                          transition: `transform ${PROJECT_CARD_DURATION_MS}ms ${PROJECT_CARD_EASE}, opacity ${PROJECT_CARD_DURATION_MS}ms ${PROJECT_CARD_EASE}`,
-                          transitionDelay:
-                            projectNavReadyForGrid &&
-                            projectCardsRevealed &&
-                            !prefersReducedMotion
-                              ? `${bottomToTopI * PROJECT_CARD_STAGGER_MS}ms`
-                              : "0ms",
-                        }}
-                      >
-                        <span className="sr-only">{p.title}</span>
-                      </a>
-                    );
-                  })}
+              {projects.length === 0 ? (
+                <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+                  <p className="max-w-sm font-serif text-lg font-light text-muted-foreground">
+                    Ainda não há projetos visíveis na grelha. No CMS confirma
+                    título e id, mantém «Implementado / visível no portfólio»
+                    ligado e guarda.
+                  </p>
+                  <p className="font-mono text-[11px] text-muted-foreground/80">
+                    Em desenvolvimento o site lê primeiro{" "}
+                    <span className="text-foreground">src/data/cms-projects.json</span>
+                    . Em produção podes usar{" "}
+                    <span className="text-foreground">CMS_PROJECTS_JSON</span>.
+                  </p>
                 </div>
-              ))}
+              ) : (
+                (() => {
+                  const rowCount = Math.max(
+                    1,
+                    Math.ceil(projects.length / 3),
+                  );
+                  const lastRowIdx = rowCount - 1;
+                  return Array.from({ length: rowCount }, (_, row) => (
+                    <div
+                      key={`row-${row}`}
+                      className="grid shrink-0 grid-cols-3 items-start gap-3"
+                    >
+                      {[0, 1, 2].map((col) => {
+                        const p = projects[row * 3 + col];
+                        const bottomToTopI = (lastRowIdx - row) * 3 + col;
+                        const cardIn =
+                          projectNavReadyForGrid &&
+                          (prefersReducedMotion || projectCardsRevealed);
+
+                        if (!p?.id?.trim()) {
+                          return (
+                            <div
+                              key={`empty-${row}-${col}`}
+                              aria-hidden
+                              className={cn(
+                                "relative min-h-0 w-full bg-muted/20",
+                                "aspect-[4/3]",
+                              )}
+                            />
+                          );
+                        }
+
+                        return (
+                          <Link
+                            key={p.id}
+                            href={`/design/${encodeURIComponent(p.id)}`}
+                            prefetch={false}
+                            className={cn(
+                              "group relative block min-h-0 w-full outline-none",
+                              "transition-[transform,opacity] motion-reduce:transition-none",
+                              "hover:z-10 focus-visible:z-10",
+                              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                              cardIn
+                                ? "translate-y-0 opacity-100"
+                                : "translate-y-7 opacity-0",
+                            )}
+                            style={{
+                              transitionDuration: `${PROJECT_CARD_DURATION_MS}ms`,
+                              transitionTimingFunction: PROJECT_CARD_EASE,
+                              transitionProperty: "transform, opacity",
+                              transitionDelay:
+                                projectNavReadyForGrid &&
+                                projectCardsRevealed &&
+                                !prefersReducedMotion
+                                  ? `${bottomToTopI * PROJECT_CARD_STAGGER_MS}ms`
+                                  : "0ms",
+                            }}
+                          >
+                            <span className="sr-only">
+                              {p.title}
+                              {p.subtitle ? ` — ${p.subtitle}` : ""}
+                            </span>
+                            {/*
+                             * Hover alinhado a vladsavruk.com/works: faixa de meta fixa em baixo (z-0);
+                             * a camada da imagem (z-10) sobe em md+ para revelar a faixa (translate-y-12).
+                             */}
+                            <div className="relative aspect-[4/3] w-full overflow-hidden bg-card">
+                              <div
+                                className={cn(
+                                  "pointer-events-none absolute inset-x-0 bottom-0 z-0 hidden min-h-12 h-auto items-center px-2.5 py-1.5 md:flex",
+                                  prefersReducedMotion && "z-20 bg-background/95",
+                                )}
+                              >
+                                <div className="flex w-full min-w-0 flex-col gap-0.5">
+                                  <h3 className="w-full min-w-0 truncate font-serif text-[14px] font-medium italic leading-tight tracking-normal text-foreground">
+                                    {p.title}
+                                  </h3>
+                                  {p.subtitle ? (
+                                    <p className="w-full min-w-0 truncate font-serif text-[12px] font-light not-italic leading-tight tracking-normal text-muted-foreground">
+                                      {p.subtitle}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div
+                                className={cn(
+                                  "absolute inset-0 z-10 overflow-hidden bg-muted/25 transition-transform duration-300 ease-[cubic-bezier(0.45,0,0.55,1)] motion-reduce:transition-none",
+                                  "md:group-hover:-translate-y-12 md:group-hover:duration-150 md:group-hover:ease-[cubic-bezier(0.45,0,0.55,1)]",
+                                  "md:group-focus-within:-translate-y-12 md:group-focus-within:duration-150",
+                                  prefersReducedMotion && "translate-y-0",
+                                )}
+                              >
+                                <div
+                                  className="absolute inset-0 bg-cover bg-center"
+                                  style={{
+                                    backgroundImage:
+                                      p.image.length > 0
+                                        ? `url(${p.image})`
+                                        : undefined,
+                                  }}
+                                  aria-hidden
+                                />
+                              </div>
+                            </div>
+                            <div className="pointer-events-none px-1 pt-2 md:hidden">
+                              <div className="flex w-full min-w-0 flex-col gap-0.5">
+                                <h3 className="w-full min-w-0 truncate font-serif text-[14px] font-medium italic leading-tight tracking-normal text-foreground">
+                                  {p.title}
+                                </h3>
+                                {p.subtitle ? (
+                                  <p className="w-full min-w-0 truncate font-serif text-[12px] font-light not-italic leading-tight tracking-normal text-muted-foreground">
+                                    {p.subtitle}
+                                  </p>
+                                ) : null}
+                              </div>
+                            </div>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()
+              )}
             </div>
           </div>
           <nav

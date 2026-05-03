@@ -5,6 +5,17 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  /**
+   * Regras do React Compiler / eslint-plugin-react-hooks (Next 16) que
+   * reprovam padrões habituais em apps Next (mounted + tema, matchMedia,
+   * refs estáveis em render). Desligadas até migrarmos ou isolarmos ficheiro a ficheiro.
+   */
+  {
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/refs": "off",
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

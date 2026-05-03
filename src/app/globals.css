@@ -198,15 +198,63 @@
   .dark .cursor-keyhole {
     cursor: url("/cursors/key-dark.svg") 16 16, pointer;
   }
+
+  /* Tiptap / conteúdo rico (CMS + página pública) */
+  .cms-editor-prose .ProseMirror p,
+  .portfolio-rich p {
+    margin: 0.45em 0;
+  }
+  .cms-editor-prose .ProseMirror p:first-child,
+  .portfolio-rich p:first-child {
+    margin-top: 0;
+  }
+  .cms-editor-prose .ProseMirror p:last-child,
+  .portfolio-rich p:last-child {
+    margin-bottom: 0;
+  }
+  .cms-editor-prose .ProseMirror ul,
+  .cms-editor-prose .ProseMirror ol,
+  .portfolio-rich ul,
+  .portfolio-rich ol {
+    padding-left: 1.35rem;
+    margin: 0.45em 0;
+  }
+  .cms-editor-prose .ProseMirror h2,
+  .portfolio-rich h2 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0.85em 0 0.4em;
+    letter-spacing: -0.02em;
+  }
+  .cms-editor-prose .ProseMirror h3,
+  .portfolio-rich h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0.75em 0 0.35em;
+    letter-spacing: -0.02em;
+  }
+  .cms-editor-prose .ProseMirror a,
+  .portfolio-rich a {
+    color: var(--primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .portfolio-rich--paper h2,
+  .portfolio-rich--paper h3 {
+    font-weight: 300;
+    font-size: 1em;
+    letter-spacing: -0.01em;
+  }
+  .cms-editor-prose .ProseMirror-focused {
+    outline: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-pulltab-squish {
     animation: none !important;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
   .animate-char-in {
     opacity: 1 !important;
     animation: none !important;
