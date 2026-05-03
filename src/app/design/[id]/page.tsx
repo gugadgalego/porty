@@ -24,7 +24,7 @@ export default async function DesignProjectPage({ params }: Props) {
   if (!project) notFound();
 
   return (
-    <div className="min-h-svh overflow-x-auto bg-[#fafaf9] text-stone-950">
+    <div className="min-h-svh overflow-x-hidden bg-white text-stone-950">
       <DesignPaperProjectView project={project} />
     </div>
   );

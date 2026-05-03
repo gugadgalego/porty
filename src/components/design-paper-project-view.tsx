@@ -1,12 +1,12 @@
 import Link from "next/link";
+import { CaretLeft } from "@phosphor-icons/react/dist/ssr";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { heroCarouselSlidesFromProject } from "@/lib/portfolio-project";
-import { DesignProjectTitleLink } from "@/components/design-project-title-link";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { ProjectHeroCarouselPaper } from "@/components/project-hero-carousel-paper";
 import { cn } from "@/lib/utils";
 
-/** Ver comentário em `page.tsx`: URL canónica da grelha = `/#design`. */
+/** URL canónica da grelha = `/#design`. */
 const bottomNav = [
   { label: "DESIGN", href: "/#design" },
   { label: "DEV", href: "/#dev" },
@@ -15,9 +15,10 @@ const bottomNav = [
 ] as const;
 
 /**
- * Layout alinhado ao artboard «PROJETO ABERTO» no Paper (1AJ-0 / 1AU-0):
- * coluna 600px, pt 98px, gap 24px; título 14px itálico; carrossel hero full-bleed (600×400, setas, sem scrollbar);
- * corpo 14px light.
+ * Página de projeto aberto: fundo branco, coluna alinhada à esquerda com respiro,
+ * título serif itálico, carrossel horizontal com pré-visualização do slide seguinte,
+ * setas discretas por baixo, texto do corpo; barra inferior DESIGN/DEV/SOBRE/CV;
+ * botão voltar quadrado preto à direita (referência visual).
  */
 export function DesignPaperProjectView({
   project,
@@ -31,34 +32,49 @@ export function DesignPaperProjectView({
   return (
     <div
       className={cn(
-        "relative min-h-svh bg-[#fafaf9] pb-[calc(3.5rem+env(safe-area-inset-bottom))] text-stone-950 antialiased",
+        "relative min-h-svh bg-white pb-[calc(3.5rem+env(safe-area-inset-bottom))] text-stone-950 antialiased",
         className,
       )}
     >
       <a
         href="#conteudo-projeto"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded focus:bg-stone-900 focus:px-3 focus:py-2 focus:text-sm focus:text-[#fafaf9]"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded focus:bg-stone-900 focus:px-3 focus:py-2 focus:text-sm focus:text-white"
       >
         Saltar para o conteúdo
       </a>
 
+      <Link
+        href="/#design"
+        aria-label="Voltar à grelha de projetos"
+        className={cn(
+          "fixed right-3 top-1/2 z-40 flex size-9 -translate-y-1/2 items-center justify-center",
+          "bg-stone-950 text-white shadow-sm transition-opacity hover:opacity-90",
+          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-950",
+        )}
+      >
+        <CaretLeft className="size-4" weight="bold" aria-hidden />
+      </Link>
+
       <main
         id="conteudo-projeto"
-        className="relative mx-auto flex w-full max-w-[600px] flex-col items-start gap-6 px-4 pr-12 pt-[98px] sm:px-0 sm:pr-0"
+        className={cn(
+          "relative mx-auto flex w-full max-w-[min(100%,36rem)] flex-col items-start gap-6",
+          "pl-6 pr-14 pt-16 sm:pl-10 sm:pr-16 sm:pt-20 md:pl-16 md:pr-20 lg:pl-24",
+        )}
       >
         <header className="flex w-full flex-col items-start text-left">
           <h1 className="m-0 w-full p-0 text-left font-normal">
-            <DesignProjectTitleLink
-              title={project.title}
+            <Link
               href="/#design"
-              ariaLabel={`${project.title}: ver todos os projetos`}
-            />
+              className={cn(
+                "inline-block max-w-full text-balance font-serif text-[14px] font-normal italic leading-[1.35] text-stone-950",
+                "outline-none transition-opacity hover:opacity-70",
+                "focus-visible:ring-2 focus-visible:ring-stone-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+              )}
+            >
+              {project.title}
+            </Link>
           </h1>
-          {project.subtitle ? (
-            <p className="mt-3 w-full max-w-[36rem] text-left text-[13px] font-light leading-snug text-stone-600 dark:text-stone-400">
-              {project.subtitle}
-            </p>
-          ) : null}
         </header>
 
         <ProjectHeroCarouselPaper slides={heroSlides} className="w-full" />
@@ -73,13 +89,21 @@ export function DesignPaperProjectView({
 
       <nav
         aria-label="Secções do site"
-        className="fixed inset-x-0 bottom-0 z-50 flex items-stretch justify-center border-t border-stone-200/80 bg-[#fafaf9] pb-[env(safe-area-inset-bottom)]"
+        className={cn(
+          "fixed inset-x-0 bottom-0 z-50 flex items-stretch justify-between gap-1",
+          "border-t border-neutral-200 bg-white pb-[env(safe-area-inset-bottom)]",
+          "px-2 sm:px-6",
+        )}
       >
         {bottomNav.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className="flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 font-mono text-[12px] font-medium leading-[1.3] text-stone-950 transition-colors hover:bg-stone-200/60"
+            className={cn(
+              "flex flex-1 items-center justify-center py-2.5",
+              "font-sans text-[11px] font-bold uppercase tracking-[0.14em] text-stone-950",
+              "transition-colors hover:bg-neutral-100/90",
+            )}
           >
             {item.label}
           </Link>
