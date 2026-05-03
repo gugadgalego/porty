@@ -150,6 +150,7 @@
 }
 
 /* Gooey squish: flash de brilho + pequeno overshoot de escala na troca de modo. */
+
 @keyframes pulltab-squish {
   0% {
     opacity: 0;

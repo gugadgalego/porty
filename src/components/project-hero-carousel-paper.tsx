@@ -11,17 +11,15 @@ type Props = {
   className?: string;
 };
 
-const SLIDE_W = 600;
-const SLIDE_H = 400;
-const GAP_PX = 20;
+const GAP_PX = 14;
 
-function trackWidthPx(n: number): number {
+function trackWidthPx(slideW: number, n: number): number {
   if (n < 1) return 0;
-  return n * SLIDE_W + (n - 1) * GAP_PX;
+  return n * slideW + (n - 1) * GAP_PX;
 }
 
-function minTranslate(viewW: number, n: number): number {
-  const tw = trackWidthPx(n);
+function minTranslate(viewW: number, slideW: number, n: number): number {
+  const tw = trackWidthPx(slideW, n);
   return Math.min(0, viewW - tw);
 }
 
@@ -31,8 +29,14 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
 
   const viewportRef = React.useRef<HTMLDivElement>(null);
   const [viewW, setViewW] = React.useState(0);
+  const [slideW, setSlideW] = React.useState(560);
   const [translate, setTranslate] = React.useState(0);
   const [reducedMotion, setReducedMotion] = React.useState(false);
+
+  const slideH = React.useMemo(
+    () => Math.max(200, Math.round(slideW * (2 / 3))),
+    [slideW],
+  );
 
   React.useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -45,7 +49,10 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
   const measure = React.useCallback(() => {
     const el = viewportRef.current;
     if (!el) return;
-    setViewW(el.clientWidth);
+    const vw = el.clientWidth;
+    setViewW(vw);
+    const peek = Math.min(56, Math.max(32, Math.round(vw * 0.12)));
+    setSlideW(Math.max(260, vw - peek));
   }, []);
 
   React.useLayoutEffect(() => {
@@ -64,13 +71,14 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
     setTranslate(0);
   }, [n]);
 
-  const minT = viewW > 0 ? minTranslate(viewW, n) : 0;
-  const step = SLIDE_W + GAP_PX;
+  const minT =
+    viewW > 0 ? minTranslate(viewW, slideW, n) : 0;
+  const step = slideW + GAP_PX;
 
   React.useEffect(() => {
     if (viewW <= 0) return;
     setTranslate((t) => Math.max(minT, Math.min(0, t)));
-  }, [minT, viewW]);
+  }, [minT, viewW, slideW]);
 
   const goPrev = React.useCallback(() => {
     setTranslate((t) => Math.min(0, t + step));
@@ -82,13 +90,14 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
 
   const prevMuted = translate >= -0.5;
   const nextMuted = translate <= minT + 0.5;
-  const trackFits = n > 0 && viewW > 0 && trackWidthPx(n) <= viewW + 0.5;
+  const trackFits =
+    n > 0 && viewW > 0 && trackWidthPx(slideW, n) <= viewW + 0.5;
 
   const arrowButtonClass = (muted: boolean) =>
     cn(
-      "size-auto min-h-0 rounded-none border-0 bg-transparent px-1.5 py-1 shadow-none hover:bg-stone-100",
-      "outline outline-1 -outline-offset-1 transition-[color,outline-color]",
-      muted ? "outline-[#E5E5E5]" : "outline-[#D4D4D4]",
+      "inline-flex size-8 shrink-0 items-center justify-center rounded-none border-0 bg-transparent p-0 shadow-none hover:bg-neutral-100",
+      "outline outline-1 -outline-offset-1 outline-neutral-400 transition-[color,outline-color]",
+      muted && "outline-neutral-200",
     );
 
   if (n === 0) return null;
@@ -100,12 +109,7 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
       : "none";
 
   return (
-    <div
-      className={cn(
-        "relative ml-[calc(50%-50vw)] w-screen min-w-0 max-w-[100vw]",
-        className,
-      )}
-    >
+    <div className={cn("relative w-full min-w-0", className)}>
       <div ref={viewportRef} className="w-full overflow-hidden">
         <div
           className="flex flex-nowrap"
@@ -119,14 +123,14 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
           {valid.map((s, i) => (
             <div
               key={`${s.url}-${i}`}
-              className="shrink-0 overflow-hidden rounded-xl border border-stone-200/70 bg-stone-100 dark:border-stone-700/60 dark:bg-stone-900/40"
-              style={{ width: SLIDE_W, height: SLIDE_H }}
+              className="shrink-0 overflow-hidden border border-neutral-300 bg-neutral-100"
+              style={{ width: slideW, height: slideH }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={s.url}
                 alt={s.alt ?? ""}
-                className="mx-auto block h-full w-full max-h-full max-w-full object-contain"
+                className="h-full w-full object-cover"
               />
             </div>
           ))}
@@ -134,7 +138,7 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
       </div>
 
       {n > 1 ? (
-        <div className="mx-auto mt-3 flex w-full max-w-[600px] justify-start gap-2 px-4 sm:px-0">
+        <div className="mt-3 flex w-full justify-start gap-2">
           <Button
             type="button"
             variant="ghost"
@@ -146,7 +150,7 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
             <CaretLeft
               className={cn(
                 "size-4",
-                prevMuted || trackFits ? "text-[#78716C]" : "text-[#0C0A09]",
+                prevMuted || trackFits ? "text-neutral-400" : "text-stone-950",
               )}
               weight="regular"
             />
@@ -162,7 +166,7 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
             <CaretRight
               className={cn(
                 "size-4",
-                nextMuted || trackFits ? "text-[#78716C]" : "text-[#0C0A09]",
+                nextMuted || trackFits ? "text-neutral-400" : "text-stone-950",
               )}
               weight="regular"
             />

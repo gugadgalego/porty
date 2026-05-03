@@ -96,7 +96,7 @@ export function ProjectDetailPanel({
               return (
                 <figure key={block.id} className="space-y-2">
                   {paper ? (
-                    <div className="aspect-[3/2] w-full overflow-hidden bg-stone-200">
+                    <div className="aspect-[3/2] w-full overflow-hidden border border-neutral-300 bg-neutral-100">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={block.url}

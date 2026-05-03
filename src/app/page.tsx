@@ -937,35 +937,20 @@ export default function Home() {
                 </div>
               ) : (
                 (() => {
-                  const rowCount = Math.max(
-                    1,
-                    Math.ceil(projects.length / 3),
-                  );
+                  const gridItems = projects.filter((p) => p?.id?.trim());
+                  const n = gridItems.length;
+                  const rowCount = Math.max(1, Math.ceil(n / 3));
                   const lastRowIdx = rowCount - 1;
-                  return Array.from({ length: rowCount }, (_, row) => (
-                    <div
-                      key={`row-${row}`}
-                      className="grid shrink-0 grid-cols-3 items-start gap-3"
-                    >
-                      {[0, 1, 2].map((col) => {
-                        const p = projects[row * 3 + col];
+
+                  return (
+                    <div className="grid shrink-0 grid-cols-3 items-start gap-3">
+                      {gridItems.map((p, serial) => {
+                        const row = Math.floor(serial / 3);
+                        const col = serial % 3;
                         const bottomToTopI = (lastRowIdx - row) * 3 + col;
                         const cardIn =
                           projectNavReadyForGrid &&
                           (prefersReducedMotion || projectCardsRevealed);
-
-                        if (!p?.id?.trim()) {
-                          return (
-                            <div
-                              key={`empty-${row}-${col}`}
-                              aria-hidden
-                              className={cn(
-                                "relative min-h-0 w-full bg-muted/20",
-                                "aspect-[4/3]",
-                              )}
-                            />
-                          );
-                        }
 
                         return (
                           <Link
@@ -973,9 +958,9 @@ export default function Home() {
                             href={`/design/${encodeURIComponent(p.id)}`}
                             prefetch={false}
                             className={cn(
-                              "group relative block min-h-0 w-full outline-none",
+                              "relative block min-h-0 w-full min-w-0 outline-none",
                               "transition-[transform,opacity] motion-reduce:transition-none",
-                              "hover:z-10 focus-visible:z-10",
+                              "focus-visible:z-10",
                               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                               cardIn
                                 ? "translate-y-0 opacity-100"
@@ -997,36 +982,8 @@ export default function Home() {
                               {p.title}
                               {p.subtitle ? ` — ${p.subtitle}` : ""}
                             </span>
-                            {/*
-                             * Hover alinhado a vladsavruk.com/works: faixa de meta fixa em baixo (z-0);
-                             * a camada da imagem (z-10) sobe em md+ para revelar a faixa (translate-y-12).
-                             */}
-                            <div className="relative aspect-[4/3] w-full overflow-hidden bg-card">
-                              <div
-                                className={cn(
-                                  "pointer-events-none absolute inset-x-0 bottom-0 z-0 hidden min-h-12 h-auto items-center px-2.5 py-1.5 md:flex",
-                                  prefersReducedMotion && "z-20 bg-background/95",
-                                )}
-                              >
-                                <div className="flex w-full min-w-0 flex-col gap-0.5">
-                                  <h3 className="w-full min-w-0 truncate font-serif text-[14px] font-medium italic leading-tight tracking-normal text-foreground">
-                                    {p.title}
-                                  </h3>
-                                  {p.subtitle ? (
-                                    <p className="w-full min-w-0 truncate font-serif text-[12px] font-light not-italic leading-tight tracking-normal text-muted-foreground">
-                                      {p.subtitle}
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div
-                                className={cn(
-                                  "absolute inset-0 z-10 overflow-hidden bg-muted/25 transition-transform duration-300 ease-[cubic-bezier(0.45,0,0.55,1)] motion-reduce:transition-none",
-                                  "md:group-hover:-translate-y-12 md:group-hover:duration-150 md:group-hover:ease-[cubic-bezier(0.45,0,0.55,1)]",
-                                  "md:group-focus-within:-translate-y-12 md:group-focus-within:duration-150",
-                                  prefersReducedMotion && "translate-y-0",
-                                )}
-                              >
+                            <div className="relative min-h-[320px] w-full min-w-0 overflow-hidden bg-card">
+                              <div className="absolute inset-0 overflow-hidden bg-muted/25">
                                 <div
                                   className="absolute inset-0 bg-cover bg-center"
                                   style={{
@@ -1039,23 +996,11 @@ export default function Home() {
                                 />
                               </div>
                             </div>
-                            <div className="pointer-events-none px-1 pt-2 md:hidden">
-                              <div className="flex w-full min-w-0 flex-col gap-0.5">
-                                <h3 className="w-full min-w-0 truncate font-serif text-[14px] font-medium italic leading-tight tracking-normal text-foreground">
-                                  {p.title}
-                                </h3>
-                                {p.subtitle ? (
-                                  <p className="w-full min-w-0 truncate font-serif text-[12px] font-light not-italic leading-tight tracking-normal text-muted-foreground">
-                                    {p.subtitle}
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
                           </Link>
                         );
                       })}
                     </div>
-                  ));
+                  );
                 })()
               )}
             </div>
