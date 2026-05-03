@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useTheme } from "next-themes";
 import {
   CaretLeft,
@@ -288,7 +289,6 @@ export function PullTab() {
     }
     // Carregamento único pós-mount (evita hydration mismatch; o componente
     // retorna null enquanto mounted=false, então não há cascata real).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (loadedCorner) setCorner(loadedCorner);
     if (loadedMode) setMode(loadedMode);
     if (loadedFloat) setFloatPos(loadedFloat);
@@ -739,10 +739,8 @@ export function PullTab() {
     : locale === "pt"
     ? "Ativar tema escuro"
     : "Switch to dark theme";
-  const backofficeLabel =
-    locale === "pt"
-      ? "Backoffice (em breve)"
-      : "Backoffice (coming soon)";
+  const cmsLabel =
+    locale === "pt" ? "CMS do portfólio" : "Portfolio CMS";
   const cvLabel = locale === "pt" ? "Baixar CV" : "Download CV";
 
   return (
@@ -854,16 +852,13 @@ export function PullTab() {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <TabSlot
-                aria-label={backofficeLabel}
-                aria-disabled
-                onClick={(e) => e.preventDefault()}
-                className="cursor-keyhole opacity-50"
-              >
-                <Keyhole size={16} weight="regular" />
+              <TabSlot asChild aria-label={cmsLabel}>
+                <Link href="/admin" prefetch={false}>
+                  <Keyhole size={16} weight="regular" />
+                </Link>
               </TabSlot>
             </TooltipTrigger>
-            <TooltipContent side="top">{backofficeLabel}</TooltipContent>
+            <TooltipContent side="top">{cmsLabel}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       ) : (

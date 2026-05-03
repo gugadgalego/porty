@@ -1,0 +1,30 @@
+[
+  {
+    "id": "p1",
+    "title": "M.A.I.S.",
+    "subtitle": "Laboratório de IA",
+    "image": "/cms-uploads/588b271ca20c02103216c5a5698dba30.png",
+    "blocks": [
+      {
+        "type": "text",
+        "id": "a13e77a3-eb0d-43b4-bea9-39707c1b92a3",
+        "html": "<p>Um laboratório pessoal, um cemitério de prompts.<br></p><p>Entre erros, acertos e aleatoriedades, o foco é um só: <strong>a manipulação artística de imagens sintéticas na criação de uma linguagem visual.<br></strong></p><p>Midjourney / GPT / ComfyUI / Visual Electric / Flora AI / Gemini / Runway.<br></p><p>O método é o experimento. A estética é o acidente.<br></p><p>Se é moral ou não, pouco importa. As imagens estão feitas.</p>"
+      },
+      {
+        "type": "image",
+        "id": "bd187b58-cea6-4c3e-a241-cd170fec638d",
+        "url": "/cms-uploads/a61d82619b820ae1472e5bdbe8dec2ab.png",
+        "caption": "midjourney.",
+        "placement": "hero"
+      },
+      {
+        "type": "image",
+        "id": "85e03bda-b10e-44c3-8210-f3567927ec32",
+        "url": "/cms-uploads/b2d437f287202faa550de6352945c9e5.png",
+        "caption": "midjourney.",
+        "placement": "hero"
+      }
+    ],
+    "implemented": true
+  }
+]
