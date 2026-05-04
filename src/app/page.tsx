@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,23 @@ const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 const PROJECT_CARD_STAGGER_MS = 70;
 const PROJECT_CARD_DURATION_MS = 420;
 const PROJECT_CARD_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
+/** Largura mínima por slot quando existem várias colunas (slots + frames alinham-se a isto). */
+const DESIGN_GRID_MIN_SLOT_PX = 464;
+
+function designGridColumnCountForWidth(
+  widthPx: number,
+  gapPx: number,
+  minSlotPx: number,
+): number {
+  if (widthPx <= 0) return 1;
+  let best = 1;
+  for (let c = 2; c <= 24; c++) {
+    const perSlot = (widthPx - (c - 1) * gapPx) / c;
+    if (perSlot >= minSlotPx) best = c;
+    else break;
+  }
+  return best;
+}
 /** Nav (Design): mesma “respiração” dos cartões — primeiro some no meio, reaparece no rodapé, depois a grid. */
 const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
 const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
@@ -90,6 +108,13 @@ export default function Home() {
   const measureEnRef = React.useRef<HTMLDivElement | null>(null);
 
   const bottomNavRef = React.useRef<HTMLElement | null>(null);
+  /** Nº de colunas (responsive, min. 464px/slot); `repeat(n,1fr)` + frames invisíveis na última fila. */
+  const designGridRef = React.useRef<HTMLDivElement | null>(null);
+  const [designGridCols, setDesignGridCols] = React.useState(1);
+  const designGridColsRef = React.useRef(designGridCols);
+  React.useEffect(() => {
+    designGridColsRef.current = designGridCols;
+  }, [designGridCols]);
   /** Depois do stagger-in dos botões no rodapé: libera a grid (cascata dos cards). */
   const [projectNavReadyForGrid, setProjectNavReadyForGrid] =
     React.useState(false);
@@ -161,6 +186,52 @@ export default function Home() {
       cancelAnimationFrame(raf1);
     };
   }, [projectNavReadyForGrid, prefersReducedMotion]);
+
+  React.useLayoutEffect(() => {
+    const el = designGridRef.current;
+    if (!el) return;
+    const read = () => {
+      const widthPx = el.getBoundingClientRect().width;
+      const gapRaw =
+        getComputedStyle(el).columnGap ||
+        getComputedStyle(el).gap ||
+        "12px";
+      const gapPx = Number.parseFloat(gapRaw) || 12;
+      const nextCols = designGridColumnCountForWidth(
+        widthPx,
+        gapPx,
+        DESIGN_GRID_MIN_SLOT_PX,
+      );
+      if (nextCols === designGridColsRef.current) return;
+
+      const commit = () => {
+        flushSync(() => {
+          setDesignGridCols(nextCols);
+          designGridColsRef.current = nextCols;
+        });
+      };
+
+      if (
+        prefersReducedMotion ||
+        typeof document.startViewTransition !== "function"
+      ) {
+        commit();
+        return;
+      }
+
+      document.startViewTransition(commit);
+    };
+    read();
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(read);
+    });
+    ro.observe(el);
+    window.addEventListener("resize", read);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", read);
+    };
+  }, [projects.length, projectsView, prefersReducedMotion]);
 
   React.useEffect(() => {
     if (!languageReady) return;
@@ -939,15 +1010,24 @@ export default function Home() {
                 (() => {
                   const gridItems = projects.filter((p) => p?.id?.trim());
                   const n = gridItems.length;
-                  const rowCount = Math.max(1, Math.ceil(n / 3));
+                  const gridCols = Math.max(1, designGridCols);
+                  const rowCount = Math.max(1, Math.ceil(n / gridCols));
                   const lastRowIdx = rowCount - 1;
+                  const trailingPlaceholders =
+                    n === 0 ? 0 : (gridCols - (n % gridCols)) % gridCols;
 
                   return (
-                    <div className="grid shrink-0 grid-cols-3 items-start gap-3">
+                    <div
+                      ref={designGridRef}
+                      className="grid w-full shrink-0 items-stretch gap-3"
+                      style={{
+                        gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+                      }}
+                    >
                       {gridItems.map((p, serial) => {
-                        const row = Math.floor(serial / 3);
-                        const col = serial % 3;
-                        const bottomToTopI = (lastRowIdx - row) * 3 + col;
+                        const row = Math.floor(serial / gridCols);
+                        const col = serial % gridCols;
+                        const bottomToTopI = (lastRowIdx - row) * gridCols + col;
                         const cardIn =
                           projectNavReadyForGrid &&
                           (prefersReducedMotion || projectCardsRevealed);
@@ -967,6 +1047,7 @@ export default function Home() {
                                 : "translate-y-7 opacity-0",
                             )}
                             style={{
+                              viewTransitionName: `design-slot-${serial}`,
                               transitionDuration: `${PROJECT_CARD_DURATION_MS}ms`,
                               transitionTimingFunction: PROJECT_CARD_EASE,
                               transitionProperty: "transform, opacity",
@@ -976,7 +1057,7 @@ export default function Home() {
                                 !prefersReducedMotion
                                   ? `${bottomToTopI * PROJECT_CARD_STAGGER_MS}ms`
                                   : "0ms",
-                            }}
+                            } as React.CSSProperties}
                           >
                             <span className="sr-only">
                               {p.title}
@@ -999,6 +1080,15 @@ export default function Home() {
                           </Link>
                         );
                       })}
+                      {Array.from({ length: trailingPlaceholders }, (_, i) => (
+                        <div
+                          key={`design-grid-frame-${i}`}
+                          aria-hidden
+                          role="presentation"
+                          style={{ viewTransitionName: "none" } as React.CSSProperties}
+                          className="pointer-events-none invisible min-h-[320px] min-w-0 w-full shrink-0 select-none"
+                        />
+                      ))}
                     </div>
                   );
                 })()
