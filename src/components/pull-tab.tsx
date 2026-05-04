@@ -8,7 +8,9 @@ import {
   CaretRight,
   DotsSixVertical,
   Keyhole,
+  Minus,
   MoonStars,
+  Plus,
   ReadCvLogo,
   Sun,
 } from "@phosphor-icons/react/dist/ssr";
@@ -47,7 +49,7 @@ const STORAGE_KEY = "porty.pullTab.v2";
 
 const COLLAPSED_W = 32;
 const COLLAPSED_H = 48;
-const EXPANDED_W = 160;
+const EXPANDED_W = 276;
 const EXPANDED_H = 32;
 
 /** Distância vertical do canto enquanto colapsado (o lado encosta na borda). */
@@ -770,12 +772,12 @@ export function PullTab() {
         touchAction: "none",
       }}
       className={cn(
-        "relative flex select-none items-center justify-center overflow-hidden bg-foreground text-background shadow-lg shadow-foreground/20 ring-1 ring-background/10",
+        "relative flex select-none items-center justify-between gap-2 overflow-hidden bg-foreground pl-1 text-background shadow-skeu",
         isExpanded
-          ? "rounded-[4px]"
+          ? "rounded-[2px]"
           : edge === "right"
-          ? "rounded-l-[4px]"
-          : "rounded-r-[4px]",
+          ? "rounded-l-[2px]"
+          : "rounded-r-[2px]",
         dragging ? "cursor-grabbing" : "",
       )}
     >
@@ -808,33 +810,25 @@ export function PullTab() {
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <TabSlot
-                aria-label={themeLabel}
-                onClick={() => setTheme(isDark ? "light" : "dark")}
-              >
-                {isDark ? (
-                  <Sun size={16} weight="regular" />
-                ) : (
-                  <MoonStars size={16} weight="regular" />
-                )}
-              </TabSlot>
+              <ThemeToggle
+                isDark={isDark}
+                onToggle={() => setTheme(isDark ? "light" : "dark")}
+                label={themeLabel}
+              />
             </TooltipTrigger>
             <TooltipContent side="top">{themeLabel}</TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <TabSlot
-                aria-label={
+              <LangToggle
+                onToggle={toggleLocale}
+                label={
                   locale === "pt"
                     ? "Mudar para inglês"
                     : "Mudar para português"
                 }
-                onClick={toggleLocale}
-              >
-                <span className="font-mono text-[12px] font-medium leading-none tracking-wide">
-                  {dictionary.languageToggle}
-                </span>
-              </TabSlot>
+                text={dictionary.languageToggle}
+              />
             </TooltipTrigger>
             <TooltipContent side="top">
               {locale === "pt" ? "English" : "Português"}
@@ -917,3 +911,162 @@ function TabSlot({
     />
   );
 }
+
+type ThemeToggleProps = Omit<React.ComponentProps<"button">, "onToggle"> & {
+  isDark: boolean;
+  onToggle: () => void;
+  label: string;
+};
+
+/**
+ * Sub-pill do tema — o próprio container ganha fundo `bg-background/10` (um
+ * degrau de superfície acima do pill principal) e arredondamento `rounded-md`
+ * (8px, segue o design system). Dentro: Sol, track/knob, Lua. O ícone do lado
+ * ativo fica opaco; o inativo fica apagado.
+ */
+const ThemeToggle = React.forwardRef<HTMLButtonElement, ThemeToggleProps>(
+  function ThemeToggle(
+    { isDark, onToggle, label, className, ...props },
+    ref,
+  ) {
+    return (
+      <span
+        className={cn(
+          "relative z-10 flex h-6 shrink-0 items-center gap-1 rounded-md bg-background/10 p-1",
+        )}
+      >
+        <Sun
+          aria-hidden
+          size={14}
+          weight="fill"
+          className={cn(
+            "shrink-0 transition-opacity duration-200",
+            isDark ? "opacity-30" : "opacity-80",
+          )}
+        />
+        <button
+          ref={ref}
+          type="button"
+          role="switch"
+          aria-checked={isDark}
+          aria-label={label}
+          className={cn(
+            "relative flex h-4 w-7 shrink-0 items-center rounded-full bg-background/20 p-0.5 transition-colors",
+            "shadow-[inset_0_1px_1px_0_rgba(0,0,0,0.25),inset_0_-1px_0_0_rgba(255,255,255,0.08)]",
+            "hover:bg-background/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-background/60",
+            className,
+          )}
+          {...props}
+          onClick={(e) => {
+            props.onClick?.(e);
+            if (!e.defaultPrevented) onToggle();
+          }}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "block size-3 rounded-full bg-background transition-transform duration-200 ease-out",
+              "shadow-[0_1px_2px_rgba(0,0,0,0.45),inset_0_0.5px_0_0_rgba(255,255,255,0.6)]",
+              isDark ? "translate-x-3" : "translate-x-0",
+            )}
+          />
+        </button>
+        <MoonStars
+          aria-hidden
+          size={14}
+          weight="fill"
+          className={cn(
+            "shrink-0 transition-opacity duration-200",
+            isDark ? "opacity-80" : "opacity-30",
+          )}
+        />
+      </span>
+    );
+  },
+);
+
+type LangToggleProps = Omit<React.ComponentProps<"button">, "onToggle"> & {
+  onToggle: () => void;
+  label: string;
+  text: string;
+};
+
+/**
+ * Sub-pill de idioma — visual stepper com `[−] EN [+]`. Clicar no − reduz
+ * o tamanho do texto do site, no + aumenta. Clicar no texto dispara toggleLocale.
+ * Tamanho persiste em localStorage.
+ */
+const LangToggle = React.forwardRef<HTMLButtonElement, LangToggleProps>(
+  function LangToggle({ onToggle, label, text, className, ...props }, ref) {
+    const [fontSize, setFontSize] = React.useState(100);
+
+    React.useEffect(() => {
+      try {
+        const stored = window.localStorage.getItem("porty.fontSize");
+        if (stored) setFontSize(Math.max(75, Math.min(125, parseInt(stored, 10))));
+      } catch {
+        /* ignore */
+      }
+    }, []);
+
+    React.useEffect(() => {
+      try {
+        window.localStorage.setItem("porty.fontSize", String(fontSize));
+        const root = document.documentElement;
+        root.style.setProperty("--user-font-scale", `${fontSize / 100}`);
+      } catch {
+        /* ignore */
+      }
+    }, [fontSize]);
+
+    const handleDecrease = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setFontSize((prev) => Math.max(75, prev - 5));
+    };
+
+    const handleIncrease = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setFontSize((prev) => Math.min(125, prev + 5));
+    };
+
+    const handleTextClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onToggle();
+    };
+
+    return (
+      <div
+        className={cn(
+          "relative z-10 flex h-6 w-[72px] shrink-0 items-center justify-between gap-2 rounded-md bg-background/10 p-1",
+        )}
+      >
+        <button
+          type="button"
+          aria-label="Diminuir tamanho do texto"
+          onClick={handleDecrease}
+          className="shrink-0 rounded transition-colors hover:bg-background/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-background/60 p-0.5"
+        >
+          <Minus size={14} weight="regular" className="opacity-50" />
+        </button>
+        <button
+          ref={ref}
+          type="button"
+          aria-label={label}
+          onClick={handleTextClick}
+          className="shrink-0 font-mono text-[12px] font-medium leading-none tracking-wide transition-colors hover:opacity-70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-background/60"
+          {...props}
+        >
+          {text}
+        </button>
+        <button
+          type="button"
+          aria-label="Aumentar tamanho do texto"
+          onClick={handleIncrease}
+          className="shrink-0 rounded transition-colors hover:bg-background/20 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-background/60 p-0.5"
+        >
+          <Plus size={14} weight="regular" className="opacity-50" />
+        </button>
+      </div>
+    );
+  },
+);
