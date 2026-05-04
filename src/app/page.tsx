@@ -6,20 +6,26 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrambleText } from "@/components/scramble-text";
+import { IntroBrailleSegment } from "@/components/intro-braille-segment";
 import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
 import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
+import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 
 const TYPE_SPEED_INITIAL_MS = 90;
 const POST_TYPE_HOLD_INITIAL_MS = 320;
 const DRAMATIC_PAUSE_MS = 1050;
+/** Após o último carácter do «Bem-vindo»: pausa curta + pausa dramática antes do bloco de intro. */
 const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
-const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 700;
-/** Respiro depois do chrome aparecer antes de revelar UI secundária (ex.: PullTab). */
-const SUPPORTING_UI_REVEAL_DELAY_MS = CHROME_REVEAL_DELAY_MS + 520;
+/**
+ * Depois de abrir o bloco de intro (braille nos parágrafos), espera antes do
+ * header + links inline + nav do hero — mantém a entrada E→D dos botões.
+ */
+const INTRO_BRAILLE_TO_NAV_MS = 3600;
+/** Respiro depois do header/nav antes de revelar UI secundária (ex.: PullTab). */
+const SUPPORTING_UI_AFTER_CHROME_MS = 520;
 
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
@@ -48,15 +54,13 @@ function designGridColumnCountForWidth(
 const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
 const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
 const NAV_SEQUENCE_BUFFER_MS = 40;
-/** Transição de altura do bloco de intro (troca de idioma / re-medida) + a nav acompanha no fluxo. */
+/** Transição de altura do bloco de intro ao mudar de idioma (só com intro visível). */
 const INTRO_MIN_HEIGHT_MS = 520;
 const INTRO_BLOCK_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
-/** Encolher (ex.: EN): mantém a curva que já estava agradável. */
-const INTRO_HEIGHT_SHRINK_MS = INTRO_MIN_HEIGHT_MS;
-const INTRO_HEIGHT_SHRINK_EASE = INTRO_BLOCK_EASE;
-/** Expandir (ex.: PT): mais tempo + ease-out longo no fim para não parecer “seca”. */
 const INTRO_HEIGHT_EXPAND_MS = 680;
 const INTRO_HEIGHT_EXPAND_EASE = "cubic-bezier(0.16, 1, 0.2, 1)";
+const INTRO_HEIGHT_SHRINK_MS = INTRO_MIN_HEIGHT_MS;
+const INTRO_HEIGHT_SHRINK_EASE = INTRO_BLOCK_EASE;
 
 /** Anula o `Button` padrão (`inline-flex` + `nowrap`) para o texto fluir e centralizar no parágrafo. */
 const introLinkButtonClass = cn(
@@ -83,6 +87,8 @@ export default function Home() {
   const [typingDone, setTypingDone] = React.useState(false);
   const [introVisible, setIntroVisible] = React.useState(false);
   const [chromeVisible, setChromeVisible] = React.useState(false);
+  /** Só a nav do hero (Design / Dev / …): fade por último, depois do braille da intro. */
+  const [heroNavVisible, setHeroNavVisible] = React.useState(false);
   const [projectsView, setProjectsView] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
   const prevWelcomeRef = React.useRef<string | null>(null);
@@ -280,25 +286,43 @@ export default function Home() {
   React.useEffect(() => {
     if (!languageReady) return;
     const initialTypingMs = welcomeFull.length * TYPE_SPEED_INITIAL_MS;
-    const introT = setTimeout(
+    const introT = window.setTimeout(
       () => setIntroVisible(true),
       initialTypingMs + INTRO_REVEAL_DELAY_MS,
     );
-    const chromeT = setTimeout(
-      () => setChromeVisible(true),
-      initialTypingMs + CHROME_REVEAL_DELAY_MS,
-    );
-    const supportingT = setTimeout(
-      () => markChromeReady(),
-      initialTypingMs + SUPPORTING_UI_REVEAL_DELAY_MS,
-    );
     return () => {
-      clearTimeout(introT);
-      clearTimeout(chromeT);
-      clearTimeout(supportingT);
+      window.clearTimeout(introT);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [languageReady]);
+  }, [languageReady, welcomeFull]);
+
+  /** Header (idioma/tema) em conjunto com o bloco de intro; a nav do hero fica para o efeito seguinte. */
+  React.useEffect(() => {
+    if (!introVisible) return;
+    setChromeVisible(true);
+  }, [introVisible]);
+
+  /** Depois do braille da intro: só nav do hero, com fade + stagger E→D. */
+  React.useEffect(() => {
+    if (!introVisible) {
+      setHeroNavVisible(false);
+      return;
+    }
+
+    const delayMs = prefersReducedMotion ? 100 : INTRO_BRAILLE_TO_NAV_MS;
+    const id = window.setTimeout(() => setHeroNavVisible(true), delayMs);
+    return () => {
+      window.clearTimeout(id);
+    };
+  }, [introVisible, prefersReducedMotion]);
+
+  React.useEffect(() => {
+    if (!heroNavVisible) return;
+    const id = window.setTimeout(
+      () => markChromeReady(),
+      SUPPORTING_UI_AFTER_CHROME_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [heroNavVisible]);
 
   const sections = [
     { label: dictionary.sections.design, href: "#design", isProjects: true },
@@ -307,9 +331,6 @@ export default function Home() {
     { label: dictionary.sections.cv, href: "#cv", isProjects: false },
   ];
 
-  const shouldScrambleOnThisRender = revealKey > 0;
-
-  /** Altura do parágrafo de intro só do idioma ativo → o bloco encolhe/cresce e o flex recentraliza suavemente (min-height com transição). */
   React.useLayoutEffect(() => {
     if (!introVisible) return;
 
@@ -597,14 +618,12 @@ export default function Home() {
               if (!part) continue;
 
               out.push(
-                <ScrambleText
+                <IntroBrailleSegment
                   key={`intro-part-${revealKey}-${idx}-${i}-${part}`}
                   text={part}
-                  scramble={shouldScrambleOnThisRender}
-                  durationMs={900}
-                  startDelayMs={idx * 160}
-                  tickMs={52}
-                  maxSwapsPerChar={2}
+                  active={introVisible}
+                  startDelayMs={idx * 160 + i * 48}
+                  prefersReducedMotion={prefersReducedMotion}
                   className="whitespace-pre-wrap"
                 />,
               );
@@ -620,7 +639,8 @@ export default function Home() {
       dictionary.orlaLabel,
       dictionary.appleDeveloperAcademyLabel,
       revealKey,
-      shouldScrambleOnThisRender,
+      introVisible,
+      prefersReducedMotion,
     ],
   );
 
@@ -790,7 +810,7 @@ export default function Home() {
       if (isHero) {
         if (navItemPhase === "exiting") opacity = 0;
         else if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 0;
-        else opacity = chromeVisible ? 1 : 0;
+        else opacity = heroNavVisible ? 1 : 0;
       } else {
         if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 1;
         else opacity = 0;
@@ -801,7 +821,7 @@ export default function Home() {
         if (navItemPhase === "exiting") {
           delayMs = (lastIdx - idx) * NAV_ITEM_STAGGER_MS;
         } else if (!projectsView) {
-          delayMs = chromeVisible ? idx * 130 : 0;
+          delayMs = heroNavVisible ? idx * 130 : 0;
         }
       } else {
         if (navItemPhase === "entering") {
@@ -810,9 +830,9 @@ export default function Home() {
       }
 
       return (
-        <div
+        <li
           key={`${opts.scope}-${section.href}`}
-          className="flex-1"
+          className="relative z-[1] min-w-0 flex-1"
           style={{
             opacity,
             transition: `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
@@ -823,7 +843,7 @@ export default function Home() {
             asChild
             variant="ghost"
             size="sm"
-            className="w-full font-mono text-[12px] tracking-wide"
+            className="relative z-[1] w-full rounded-none font-mono text-[12px] tracking-wide"
           >
             <a
               href={section.href}
@@ -836,7 +856,7 @@ export default function Home() {
               {section.label}
             </a>
           </Button>
-        </div>
+        </li>
       );
     });
   };
@@ -895,26 +915,26 @@ export default function Home() {
                 aria-label={welcomeFull}
                 className="w-full text-center font-serif text-[14px] italic leading-[1.3] text-foreground"
               >
-                {!typingDone ? (
-                  <>
-                    <span aria-hidden="true">{typed}</span>
-                    <span
-                      aria-hidden="true"
-                      className="animate-caret ml-0.5 inline-block h-[0.9em] w-[1.5px] translate-y-[1px] bg-current align-middle"
-                    />
-                  </>
-                ) : revealKey > 0 ? (
-                  <ScrambleText
-                    key={`welcome-scramble-${revealKey}-${welcomeFull}`}
-                    text={welcomeFull}
-                    scramble
-                    durationMs={620}
-                    tickMs={48}
-                    maxSwapsPerChar={2}
-                  />
-                ) : (
-                  <span aria-hidden="true">{welcomeFull}</span>
-                )}
+                <span className="sr-only">{welcomeFull}</span>
+                <span
+                  aria-hidden
+                  className="relative inline-block w-full text-center"
+                >
+                  <span className="invisible select-none">{welcomeFull}</span>
+                  <span className="absolute inset-0 flex items-center justify-center text-center">
+                    {!typingDone ? (
+                      <>
+                        <span>{typed}</span>
+                        <span
+                          aria-hidden
+                          className="animate-caret ml-0.5 inline-block h-[0.9em] w-[1.5px] translate-y-[1px] bg-current align-middle"
+                        />
+                      </>
+                    ) : (
+                      <span>{welcomeFull}</span>
+                    )}
+                  </span>
+                </span>
               </h1>
 
               <div
@@ -940,9 +960,10 @@ export default function Home() {
                           ),
                     )}
                     style={{
-                      minHeight: introMinHeight
-                        ? `${introMinHeight}px`
-                        : undefined,
+                      minHeight:
+                        introVisible && introMinHeight
+                          ? `${introMinHeight}px`
+                          : undefined,
                       transition: prefersReducedMotion
                         ? "opacity 320ms ease-out"
                         : `min-height ${introHeightMotion.durationMs}ms ${introHeightMotion.easing}, opacity 900ms cubic-bezier(0.22, 1, 0.36, 1), transform 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms cubic-bezier(0.22, 1, 0.36, 1)`,
@@ -957,12 +978,15 @@ export default function Home() {
             </div>
 
             <nav
-              className={cn(
-                navContainerClass,
-                "pointer-events-auto relative z-20",
-              )}
+              aria-label="Secções do site"
+              className="pointer-events-auto relative z-20"
             >
-              {renderNavButtons({ scope: "hero" })}
+              <MagneticNavUl
+                className={navContainerClass}
+                magnetEnabled={heroNavVisible && !projectsView}
+              >
+                {renderNavButtons({ scope: "hero" })}
+              </MagneticNavUl>
             </nav>
           </div>
         </div>
@@ -1094,17 +1118,17 @@ export default function Home() {
           </div>
           <nav
             ref={bottomNavRef}
-            className={cn(
-              navContainerClass,
-              "fixed inset-x-0 bottom-0 z-30 pointer-events-auto",
-            )}
+            aria-label="Secções do site"
+            className="fixed inset-x-0 bottom-0 z-30 pointer-events-auto"
           >
-            {renderNavButtons({ scope: "bottom" })}
+            <MagneticNavUl className={navContainerClass} magnetEnabled={projectsView}>
+              {renderNavButtons({ scope: "bottom" })}
+            </MagneticNavUl>
           </nav>
         </section>
       </main>
 
-      {/* Medição invisível (PT/EN) para animar min-height só do idioma ativo e manter o hero recentralizado. */}
+      {/* Medição invisível (PT/EN) para min-height da intro quando visível. */}
       {introVisible && (
         <div
           aria-hidden="true"
