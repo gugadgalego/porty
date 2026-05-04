@@ -1,6 +1,7 @@
 "use client";
 
 import type { PortfolioProject, ProjectBlock } from "@/lib/portfolio-project";
+import { useLanguage } from "@/components/providers/language-provider";
 import { cn } from "@/lib/utils";
 import { ProjectCarousel } from "@/components/project-carousel";
 import { ProjectRichText } from "@/components/project-rich-text";
@@ -26,6 +27,7 @@ export function ProjectDetailPanel({
   omitHeader = false,
   variant = "default",
 }: Props) {
+  const { dictionary } = useLanguage();
   const blocks = project.blocks ?? [];
   const paper = variant === "paper";
 
@@ -64,10 +66,10 @@ export function ProjectDetailPanel({
           <p
             className={cn(
               "text-sm text-muted-foreground",
-              paper && "text-left text-[13px] text-stone-600",
+              paper && "text-left text-[13px] text-muted-foreground",
             )}
           >
-            Ainda não há conteúdo para este projeto. Edita no CMS.
+            {dictionary.projectEmptyCms}
           </p>
         ) : (
           blocks.map((block: ProjectBlock) => {
@@ -96,7 +98,7 @@ export function ProjectDetailPanel({
               return (
                 <figure key={block.id} className="space-y-2">
                   {paper ? (
-                    <div className="aspect-[3/2] w-full overflow-hidden border border-neutral-300 bg-neutral-100">
+                    <div className="aspect-[3/2] w-full overflow-hidden border border-border bg-muted">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={block.url}
@@ -116,7 +118,7 @@ export function ProjectDetailPanel({
                     <figcaption
                       className={cn(
                         "text-center font-mono text-[11px] text-muted-foreground",
-                        paper && "text-left text-stone-500",
+                        paper && "text-left",
                       )}
                     >
                       {block.caption}
