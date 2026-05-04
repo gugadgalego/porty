@@ -45,6 +45,15 @@ type Mode = "collapsed" | "expanded";
 
 const STORAGE_KEY = "porty.pullTab.v2";
 
+/** JSON sem `userPlaced` (formato antigo): uma vez migra para topo-direita; depois lê-se o guardado. */
+type StoredPullTab = {
+  userPlaced?: boolean;
+  mode?: Mode;
+  corner?: Corner;
+  floatX?: number | null;
+  floatY?: number | null;
+};
+
 const COLLAPSED_W = 32;
 const COLLAPSED_H = 48;
 const EXPANDED_W = 160;
@@ -202,7 +211,9 @@ const IDLE_DRAG_VISUAL: DragVisual = { scaleX: 1, scaleY: 1, rotateDeg: 0 };
 export function PullTab() {
   const [mounted, setMounted] = React.useState(false);
   const [mode, setMode] = React.useState<Mode>("collapsed");
-  const [corner, setCorner] = React.useState<Corner>("bottom-right");
+  const [corner, setCorner] = React.useState<Corner>("top-right");
+  /** `true` após o utilizador arrastar a tab — só então persistimos canto/float entre visitas. */
+  const [userPlaced, setUserPlaced] = React.useState(false);
   const [floatPos, setFloatPos] = React.useState<{
     x: number;
     y: number;
@@ -263,35 +274,39 @@ export function PullTab() {
   const isDark = mounted && resolvedTheme === "dark";
 
   React.useEffect(() => {
-    let loadedCorner: Corner | null = null;
-    let loadedMode: Mode | null = null;
-    let loadedFloat: { x: number; y: number } | null = null;
+    let loadedUserPlaced = false;
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw) as Partial<{
-          mode: Mode;
-          corner: Corner;
-          floatX: number;
-          floatY: number;
-        }>;
-        if (isCorner(parsed.corner)) loadedCorner = parsed.corner;
-        if (isMode(parsed.mode)) loadedMode = parsed.mode;
-        if (
-          typeof parsed.floatX === "number" &&
-          typeof parsed.floatY === "number"
-        ) {
-          loadedFloat = { x: parsed.floatX, y: parsed.floatY };
+        const parsed = JSON.parse(raw) as StoredPullTab;
+        const isLegacy = typeof parsed.userPlaced !== "boolean";
+
+        const applySavedLayout = () => {
+          if (isCorner(parsed.corner)) setCorner(parsed.corner);
+          if (isMode(parsed.mode)) setMode(parsed.mode);
+          if (
+            typeof parsed.floatX === "number" &&
+            typeof parsed.floatY === "number"
+          ) {
+            setFloatPos({ x: parsed.floatX, y: parsed.floatY });
+          }
+        };
+
+        if (parsed.userPlaced === true) {
+          loadedUserPlaced = true;
+          applySavedLayout();
+        } else if (isLegacy) {
+          setCorner("top-right");
+          setMode("collapsed");
+          setFloatPos(null);
+        } else {
+          applySavedLayout();
         }
       }
     } catch {
       /* ignore */
     }
-    // Carregamento único pós-mount (evita hydration mismatch; o componente
-    // retorna null enquanto mounted=false, então não há cascata real).
-    if (loadedCorner) setCorner(loadedCorner);
-    if (loadedMode) setMode(loadedMode);
-    if (loadedFloat) setFloatPos(loadedFloat);
+    setUserPlaced(loadedUserPlaced);
     setMounted(true);
   }, []);
 
@@ -301,16 +316,17 @@ export function PullTab() {
       window.localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
+          userPlaced,
           mode,
           corner,
           floatX: floatPos?.x ?? null,
           floatY: floatPos?.y ?? null,
-        }),
+        } satisfies StoredPullTab),
       );
     } catch {
       /* ignore */
     }
-  }, [mounted, mode, corner, floatPos]);
+  }, [mounted, userPlaced, mode, corner, floatPos]);
 
   React.useEffect(() => {
     return () => {
@@ -547,6 +563,7 @@ export function PullTab() {
       return;
     }
 
+    setUserPlaced(true);
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const { vx, vy, speed } = computeVelocity(info.samples);

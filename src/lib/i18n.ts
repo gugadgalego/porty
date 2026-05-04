@@ -22,6 +22,11 @@ export const dictionaries = {
       about: "SOBRE",
       cv: "CV",
     },
+    skipToContent: "Saltar para o conteúdo",
+    projectEmptyCms:
+      "Ainda não há conteúdo para este projeto. Edita no CMS.",
+    carouselPrevious: "Slide anterior",
+    carouselNext: "Slide seguinte",
   },
   en: {
     languageToggle: "PT",
@@ -44,6 +49,11 @@ export const dictionaries = {
       about: "ABOUT",
       cv: "CV",
     },
+    skipToContent: "Skip to content",
+    projectEmptyCms:
+      "There is no content for this project yet. Edit it in the CMS.",
+    carouselPrevious: "Previous slide",
+    carouselNext: "Next slide",
   },
 } as const;
 

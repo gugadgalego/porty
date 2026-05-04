@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
-import { Button } from "@/components/ui/button";
 import type { ProjectCarouselSlide } from "@/lib/portfolio-project";
+import { useLanguage } from "@/components/providers/language-provider";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -11,32 +11,23 @@ type Props = {
   className?: string;
 };
 
-const GAP_PX = 14;
+const TARGET_SLIDE_W = 600;
+const TARGET_SLIDE_H = 400;
+const GAP_PX = 12;
 
-function trackWidthPx(slideW: number, n: number): number {
-  if (n < 1) return 0;
-  return n * slideW + (n - 1) * GAP_PX;
-}
-
-function minTranslate(viewW: number, slideW: number, n: number): number {
-  const tw = trackWidthPx(slideW, n);
-  return Math.min(0, viewW - tw);
-}
-
+/**
+ * Faixa horizontal de fotos: `overflow-visible` para mostrar a seguinte à direita
+ * (e anteriores à esquerda ao avançar). Troca só por setas — `translateX`, sem scrollbar.
+ */
 export function ProjectHeroCarouselPaper({ slides, className }: Props) {
+  const { dictionary } = useLanguage();
   const valid = slides.filter((s) => s.url.trim().length > 0);
   const n = valid.length;
 
-  const viewportRef = React.useRef<HTMLDivElement>(null);
-  const [viewW, setViewW] = React.useState(0);
-  const [slideW, setSlideW] = React.useState(560);
-  const [translate, setTranslate] = React.useState(0);
+  const measureRef = React.useRef<HTMLDivElement>(null);
+  const [slideW, setSlideW] = React.useState(TARGET_SLIDE_W);
+  const [index, setIndex] = React.useState(0);
   const [reducedMotion, setReducedMotion] = React.useState(false);
-
-  const slideH = React.useMemo(
-    () => Math.max(200, Math.round(slideW * (2 / 3))),
-    [slideW],
-  );
 
   React.useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -46,13 +37,15 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
     return () => mq.removeEventListener("change", on);
   }, []);
 
+  React.useEffect(() => {
+    setIndex((i) => (n <= 0 ? 0 : Math.min(i, n - 1)));
+  }, [n]);
+
   const measure = React.useCallback(() => {
-    const el = viewportRef.current;
+    const el = measureRef.current;
     if (!el) return;
-    const vw = el.clientWidth;
-    setViewW(vw);
-    const peek = Math.min(56, Math.max(32, Math.round(vw * 0.12)));
-    setSlideW(Math.max(260, vw - peek));
+    const w = el.getBoundingClientRect().width;
+    setSlideW(Math.min(TARGET_SLIDE_W, Math.max(280, w)));
   }, []);
 
   React.useLayoutEffect(() => {
@@ -60,117 +53,116 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
   }, [measure, n]);
 
   React.useEffect(() => {
-    const el = viewportRef.current;
+    const el = measureRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => measure());
     ro.observe(el);
     return () => ro.disconnect();
   }, [measure]);
 
-  React.useEffect(() => {
-    setTranslate(0);
-  }, [n]);
+  const canPrev = n > 0 && index > 0;
+  const canNext = n > 0 && index < n - 1;
 
-  const minT =
-    viewW > 0 ? minTranslate(viewW, slideW, n) : 0;
-  const step = slideW + GAP_PX;
+  const go = React.useCallback(
+    (dir: -1 | 1) => {
+      setIndex((i) => {
+        const next = i + dir;
+        if (next < 0 || next >= n) return i;
+        return next;
+      });
+    },
+    [n],
+  );
 
-  React.useEffect(() => {
-    if (viewW <= 0) return;
-    setTranslate((t) => Math.max(minT, Math.min(0, t)));
-  }, [minT, viewW, slideW]);
-
-  const goPrev = React.useCallback(() => {
-    setTranslate((t) => Math.min(0, t + step));
-  }, [step]);
-
-  const goNext = React.useCallback(() => {
-    setTranslate((t) => Math.max(minT, t - step));
-  }, [minT, step]);
-
-  const prevMuted = translate >= -0.5;
-  const nextMuted = translate <= minT + 0.5;
-  const trackFits =
-    n > 0 && viewW > 0 && trackWidthPx(slideW, n) <= viewW + 0.5;
-
-  const arrowButtonClass = (muted: boolean) =>
-    cn(
-      "inline-flex size-8 shrink-0 items-center justify-center rounded-none border-0 bg-transparent p-0 shadow-none hover:bg-neutral-100",
-      "outline outline-1 -outline-offset-1 outline-neutral-400 transition-[color,outline-color]",
-      muted && "outline-neutral-200",
-    );
+  const swallowHorizontalWheel = React.useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      e.preventDefault();
+    },
+    [],
+  );
 
   if (n === 0) return null;
 
-  const transitionMs = reducedMotion ? 0 : 380;
-  const transitionStyle =
-    transitionMs > 0
-      ? `transform ${transitionMs}ms cubic-bezier(0.33, 1, 0.68, 1)`
-      : "none";
+  const slideH = Math.round(slideW * (TARGET_SLIDE_H / TARGET_SLIDE_W));
+  const offsetPx = index * (slideW + GAP_PX);
 
   return (
-    <div className={cn("relative w-full min-w-0", className)}>
-      <div ref={viewportRef} className="w-full overflow-hidden">
-        <div
-          className="flex flex-nowrap"
-          style={{
-            gap: GAP_PX,
-            transform: `translate3d(${translate}px,0,0)`,
-            transition: transitionStyle,
-            willChange: reducedMotion ? undefined : "transform",
-          }}
-        >
-          {valid.map((s, i) => (
-            <div
-              key={`${s.url}-${i}`}
-              className="shrink-0 overflow-hidden border border-neutral-300 bg-neutral-100"
-              style={{ width: slideW, height: slideH }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={s.url}
-                alt={s.alt ?? ""}
-                className="h-full w-full object-cover"
-              />
-            </div>
-          ))}
-        </div>
+    <div
+      ref={measureRef}
+      className={cn(
+        "w-full min-w-0 overflow-visible overscroll-x-contain touch-pan-y",
+        className,
+      )}
+      onWheel={swallowHorizontalWheel}
+    >
+      <div
+        className={cn(
+          "flex w-max max-w-none",
+          !reducedMotion && "transition-transform duration-300 ease-[cubic-bezier(0.33,1,0.68,1)]",
+        )}
+        style={{
+          gap: GAP_PX,
+          transform: `translate3d(${-offsetPx}px, 0, 0)`,
+          willChange: reducedMotion ? undefined : "transform",
+        }}
+      >
+        {valid.map((s, i) => (
+          <div
+            key={`${s.url}-${i}`}
+            className="shrink-0 overflow-hidden bg-muted"
+            style={{ width: slideW, height: slideH }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={s.url}
+              alt={s.alt ?? ""}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        ))}
       </div>
 
       {n > 1 ? (
-        <div className="mt-3 flex w-full justify-start gap-2">
-          <Button
+        <div
+          className={cn(
+            "mt-[24px] flex w-full max-w-[600px] items-center justify-start gap-2",
+          )}
+        >
+          <button
             type="button"
-            variant="ghost"
-            aria-label="Slide anterior"
-            disabled={prevMuted || trackFits}
-            onClick={goPrev}
-            className={arrowButtonClass(prevMuted || trackFits)}
+            aria-label={dictionary.carouselPrevious}
+            disabled={!canPrev}
+            onClick={() => go(-1)}
+            className={cn(
+              "flex items-center justify-center gap-0 px-1.5 py-1",
+              "outline outline-1 outline-offset-0 outline-border transition-opacity",
+              !canPrev && "opacity-50",
+            )}
           >
             <CaretLeft
-              className={cn(
-                "size-4",
-                prevMuted || trackFits ? "text-neutral-400" : "text-stone-950",
-              )}
+              className="size-4 shrink-0 text-muted-foreground"
               weight="regular"
+              aria-hidden
             />
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="ghost"
-            aria-label="Slide seguinte"
-            disabled={nextMuted || trackFits}
-            onClick={goNext}
-            className={arrowButtonClass(nextMuted || trackFits)}
+            aria-label={dictionary.carouselNext}
+            disabled={!canNext}
+            onClick={() => go(1)}
+            className={cn(
+              "flex items-center justify-center gap-0 px-1.5 py-1",
+              "outline outline-1 outline-offset-0 outline-border transition-opacity",
+              !canNext && "opacity-50",
+            )}
           >
             <CaretRight
-              className={cn(
-                "size-4",
-                nextMuted || trackFits ? "text-neutral-400" : "text-stone-950",
-              )}
+              className="size-4 shrink-0 text-foreground"
               weight="regular"
+              aria-hidden
             />
-          </Button>
+          </button>
         </div>
       ) : null}
     </div>

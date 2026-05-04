@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { DesignPaperProjectView } from "@/components/design-paper-project-view";
+import { DesignProjectPageClient } from "@/components/design-project-page-client";
 import { getSitePortfolioProjects } from "@/lib/site-projects";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +23,5 @@ export default async function DesignProjectPage({ params }: Props) {
   const project = projects.find((p) => p.id === id);
   if (!project) notFound();
 
-  return (
-    <div className="min-h-svh overflow-x-hidden bg-white text-stone-950">
-      <DesignPaperProjectView project={project} />
-    </div>
-  );
+  return <DesignProjectPageClient project={project} />;
 }

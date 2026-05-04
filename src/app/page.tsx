@@ -11,6 +11,7 @@ import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
+import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
 
 const TYPE_SPEED_INITIAL_MS = 90;
 const POST_TYPE_HOLD_INITIAL_MS = 320;
@@ -776,11 +777,7 @@ export default function Home() {
     );
   }, []);
 
-  const navContainerClass = cn(
-    "flex w-full items-stretch justify-center",
-    "px-3 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1.5",
-    "bg-background",
-  );
+  const navContainerClass = SITE_BOTTOM_NAV_CONTAINER_CLASS;
 
   const renderNavButtons = (opts: {
     scope: "hero" | "bottom";

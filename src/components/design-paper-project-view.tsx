@@ -1,24 +1,24 @@
+"use client";
+
 import Link from "next/link";
-import { CaretLeft } from "@phosphor-icons/react/dist/ssr";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { heroCarouselSlidesFromProject } from "@/lib/portfolio-project";
+import { useLanguage } from "@/components/providers/language-provider";
+import { ChromeReadyMark } from "@/components/chrome-ready-mark";
 import { ProjectDetailPanel } from "@/components/project-detail-panel";
 import { ProjectHeroCarouselPaper } from "@/components/project-hero-carousel-paper";
 import { cn } from "@/lib/utils";
 
-/** URL canónica da grelha = `/#design`. */
-const bottomNav = [
-  { label: "DESIGN", href: "/#design" },
-  { label: "DEV", href: "/#dev" },
-  { label: "SOBRE", href: "/#sobre" },
-  { label: "CV", href: "/#cv" },
-] as const;
+/** Frame único: até 600px de largura, centrado na viewport; conteúdo ao topo e à esquerda. */
+const FRAME =
+  "flex w-full max-w-[600px] flex-col items-stretch text-left";
+
+/** Espaço vertical entre secções (24px). */
+const SECTION_GAP = "gap-[24px]";
 
 /**
- * Página de projeto aberto: fundo branco, coluna alinhada à esquerda com respiro,
- * título serif itálico, carrossel horizontal com pré-visualização do slide seguinte,
- * setas discretas por baixo, texto do corpo; barra inferior DESIGN/DEV/SOBRE/CV;
- * botão voltar quadrado preto à direita (referência visual).
+ * Página de projeto: um frame centrado (600px), conteúdo alinhado ao topo/esquerda;
+ * Carrossel em faixa com fotos visíveis à direita/esquerda; troca animada só com setas.
  */
 export function DesignPaperProjectView({
   project,
@@ -27,49 +27,39 @@ export function DesignPaperProjectView({
   project: PortfolioProject;
   className?: string;
 }) {
+  const { dictionary } = useLanguage();
   const heroSlides = heroCarouselSlidesFromProject(project);
 
   return (
     <div
       className={cn(
-        "relative min-h-svh bg-white pb-[calc(3.5rem+env(safe-area-inset-bottom))] text-stone-950 antialiased",
+        "flex min-h-svh w-full flex-col items-center bg-background pb-[calc(2.75rem+env(safe-area-inset-bottom,0px))] text-foreground antialiased",
         className,
       )}
     >
+      <ChromeReadyMark />
       <a
         href="#conteudo-projeto"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded focus:bg-stone-900 focus:px-3 focus:py-2 focus:text-sm focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[60] focus:rounded focus:bg-foreground focus:px-3 focus:py-2 focus:text-sm focus:text-background"
       >
-        Saltar para o conteúdo
+        {dictionary.skipToContent}
       </a>
 
-      <Link
-        href="/#design"
-        aria-label="Voltar à grelha de projetos"
+      <div
         className={cn(
-          "fixed right-3 top-1/2 z-40 flex size-9 -translate-y-1/2 items-center justify-center",
-          "bg-stone-950 text-white shadow-sm transition-opacity hover:opacity-90",
-          "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-950",
+          FRAME,
+          SECTION_GAP,
+          "box-border px-6 pb-12 pt-[max(0.75rem,env(safe-area-inset-top,0px))] sm:px-8",
         )}
       >
-        <CaretLeft className="size-4" weight="bold" aria-hidden />
-      </Link>
-
-      <main
-        id="conteudo-projeto"
-        className={cn(
-          "relative mx-auto flex w-full max-w-[min(100%,36rem)] flex-col items-start gap-6",
-          "pl-6 pr-14 pt-16 sm:pl-10 sm:pr-16 sm:pt-20 md:pl-16 md:pr-20 lg:pl-24",
-        )}
-      >
-        <header className="flex w-full flex-col items-start text-left">
-          <h1 className="m-0 w-full p-0 text-left font-normal">
+        <header className="w-full shrink-0 pt-16">
+          <h1 className="m-0 w-full p-0 text-left">
             <Link
               href="/#design"
               className={cn(
-                "inline-block max-w-full text-balance font-serif text-[14px] font-normal italic leading-[1.35] text-stone-950",
+                "inline-block text-balance font-serif text-[14px] font-normal italic leading-[1.3] text-foreground",
                 "outline-none transition-opacity hover:opacity-70",
-                "focus-visible:ring-2 focus-visible:ring-stone-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               )}
             >
               {project.title}
@@ -77,38 +67,19 @@ export function DesignPaperProjectView({
           </h1>
         </header>
 
-        <ProjectHeroCarouselPaper slides={heroSlides} className="w-full" />
+        <div className="w-full min-w-0 shrink-0">
+          <ProjectHeroCarouselPaper slides={heroSlides} />
+        </div>
 
-        <ProjectDetailPanel
-          project={project}
-          omitHeader
-          variant="paper"
-          className="scroll-mt-0"
-        />
-      </main>
-
-      <nav
-        aria-label="Secções do site"
-        className={cn(
-          "fixed inset-x-0 bottom-0 z-50 flex items-stretch justify-between gap-1",
-          "border-t border-neutral-200 bg-white pb-[env(safe-area-inset-bottom)]",
-          "px-2 sm:px-6",
-        )}
-      >
-        {bottomNav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex flex-1 items-center justify-center py-2.5",
-              "font-sans text-[11px] font-bold uppercase tracking-[0.14em] text-stone-950",
-              "transition-colors hover:bg-neutral-100/90",
-            )}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+        <main id="conteudo-projeto" className="flex w-full flex-col">
+          <ProjectDetailPanel
+            project={project}
+            omitHeader
+            variant="paper"
+            className="w-full scroll-mt-0"
+          />
+        </main>
+      </div>
     </div>
   );
 }
