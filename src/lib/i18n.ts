@@ -11,9 +11,9 @@ export const dictionaries = {
     appleDeveloperAcademyLabel: "Apple Developer Academy",
     welcome: "Bem-vindo",
     intro: [
-      "Me chamo Gustavo Galego, mas todo mundo me chama de Guga!",
+      "Me chamo Gustavo Galego,\nmas todo mundo me chama de Guga!",
       "Crio produtos com foco em simplicidade, praticidade e atenção aos detalhes.",
-      "Hoje, eu trabalho no {UPM}, ajudando na criação do {SME}.",
+      "Hoje, eu trabalho no {UPM},\najudando na criação do {SME}.",
       "Anteriormente, trabalhei na criação do {PAPELZINHO}, na {ORLA}. Também sou alumni da {ADA}.",
     ],
     sections: {
@@ -38,9 +38,9 @@ export const dictionaries = {
     appleDeveloperAcademyLabel: "Apple Developer Academy",
     welcome: "Welcome",
     intro: [
-      "I'm Gustavo Galego, but everyone calls me Guga!",
+      "I'm Gustavo Galego,\nbut everyone calls me Guga!",
       "I build products with a focus on simplicity, practicality and attention to detail.",
-      "Today I work at {UPM}, helping to build {SME}.",
+      "Today I work at {UPM},\nhelping to build {SME}.",
       "Previously, I worked on {PAPELZINHO} at {ORLA}. I'm also an alumnus of the {ADA}.",
     ],
     sections: {
