@@ -11,9 +11,9 @@ export function DesignProjectPageClient({
   project: PortfolioProject;
 }) {
   return (
-    <>
+    <div className="min-h-svh w-full min-w-0 max-w-[100vw] overflow-x-hidden">
       <DesignPaperProjectView project={project} />
       <SiteBottomNav />
-    </>
+    </div>
   );
 }
