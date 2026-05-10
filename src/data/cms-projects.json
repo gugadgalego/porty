@@ -23,6 +23,12 @@
         "url": "/cms-uploads/b2d437f287202faa550de6352945c9e5.png",
         "caption": "midjourney.",
         "placement": "hero"
+      },
+      {
+        "type": "image",
+        "id": "0d935520-1e87-4285-a8c3-aa779b248c7f",
+        "url": "/cms-uploads/e2579875b2800c92d9bdc69be9292801.png",
+        "placement": "hero"
       }
     ],
     "implemented": true
