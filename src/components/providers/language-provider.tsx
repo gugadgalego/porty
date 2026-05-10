@@ -37,7 +37,7 @@ export function LanguageProvider({
   }, []);
 
   React.useEffect(() => {
-    document.documentElement.lang = locale === "pt" ? "pt-BR" : "en";
+    document.documentElement.lang = locale === "pt" ? "pt-BR" : "en-US";
   }, [locale]);
 
   const setLocale = React.useCallback((next: Locale) => {

@@ -6,9 +6,21 @@ import Link from "next/link";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ScrambleText } from "@/components/scramble-text";
+import { TypeAnimation } from "react-type-animation";
+import {
+  IntroExternalLink,
+  INTRO_LINK_BUTTON_CLASS,
+} from "@/components/intro-external-link";
+import { AnimeScrambleText } from "@/components/anime-scramble-text";
 import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
+import { INTRO_SCRAMBLE, introPartDelay } from "@/lib/intro-scramble";
+import {
+  getMirrorDictionary,
+  prepareIntroParagraphDual,
+  segmentResolvedText,
+  trailingPunctAfterPlaceholder,
+} from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
 import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
@@ -48,22 +60,15 @@ function designGridColumnCountForWidth(
 const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
 const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
 const NAV_SEQUENCE_BUFFER_MS = 40;
-/** Transição de altura do bloco de intro (troca de idioma / re-medida) + a nav acompanha no fluxo. */
-const INTRO_MIN_HEIGHT_MS = 520;
-const INTRO_BLOCK_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
-/** Encolher (ex.: EN): mantém a curva que já estava agradável. */
-const INTRO_HEIGHT_SHRINK_MS = INTRO_MIN_HEIGHT_MS;
-const INTRO_HEIGHT_SHRINK_EASE = INTRO_BLOCK_EASE;
-/** Expandir (ex.: PT): mais tempo + ease-out longo no fim para não parecer “seca”. */
-const INTRO_HEIGHT_EXPAND_MS = 680;
-const INTRO_HEIGHT_EXPAND_EASE = "cubic-bezier(0.16, 1, 0.2, 1)";
+/** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
 
-/** Anula o `Button` padrão (`inline-flex` + `nowrap`) para o texto fluir e centralizar no parágrafo. */
-const introLinkButtonClass = cn(
-  "h-auto min-h-0 !inline w-auto !justify-start p-0 font-serif text-[14px] font-light leading-[1.55] tracking-[-0.02em] text-muted-foreground",
-  "decoration-muted-foreground/40 underline-offset-[3px] hover:text-foreground",
-  "!whitespace-normal",
+/** Corpo do intro: stack modular (`gap` = mesmo ritmo que `space-y-5`). */
+const INTRO_BODY_STACK_CLASS = cn(
+  "flex w-full flex-col gap-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground",
 );
+
+/** Segmentos do scramble: preservar quebras de linha do copy; fluxo de linha normal. */
+const INTRO_SCRAMBLE_SEGMENT_CLASS = "whitespace-pre-wrap break-words";
 
 export default function Home() {
   const { dictionary, locale, toggleLocale, ready: languageReady } =
@@ -79,23 +84,15 @@ export default function Home() {
     : dictionary.themeToggleToDark;
 
   const welcomeFull = dictionary.welcome;
-  const [typed, setTyped] = React.useState("");
-  const [typingDone, setTypingDone] = React.useState(false);
   const [introVisible, setIntroVisible] = React.useState(false);
   const [chromeVisible, setChromeVisible] = React.useState(false);
   const [projectsView, setProjectsView] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
   const prevWelcomeRef = React.useRef<string | null>(null);
-  const hasTypedWelcomeOnceRef = React.useRef(false);
 
-  const [introMinHeight, setIntroMinHeight] = React.useState<number | null>(
-    null,
-  );
-  const [introHeightMotion, setIntroHeightMotion] = React.useState<{
-    durationMs: number;
-    easing: string;
-  }>({ durationMs: INTRO_MIN_HEIGHT_MS, easing: INTRO_BLOCK_EASE });
-  const lastIntroMinHeightRef = React.useRef<number | null>(null);
+  const [introParagraphHeights, setIntroParagraphHeights] = React.useState<
+    number[]
+  >([]);
   const [prefersReducedMotion, setPrefersReducedMotion] =
     React.useState(false);
   React.useEffect(() => {
@@ -105,8 +102,45 @@ export default function Home() {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
-  const measurePtRef = React.useRef<HTMLDivElement | null>(null);
-  const measureEnRef = React.useRef<HTMLDivElement | null>(null);
+  const measurePtParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
+  const measureEnParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
+
+  /** Primeira string do título capturada uma vez — o typing não reinicia ao mudar locale. */
+  const [frozenWelcome, setFrozenWelcome] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!languageReady) return;
+    setFrozenWelcome((prev) => prev ?? dictionary.welcome);
+  }, [languageReady, dictionary.welcome]);
+
+  const [welcomeTypingComplete, setWelcomeTypingComplete] =
+    React.useState(false);
+  React.useEffect(() => {
+    if (prefersReducedMotion) {
+      setWelcomeTypingComplete(true);
+      return;
+    }
+    if (!frozenWelcome) return;
+    const ms =
+      frozenWelcome.length * TYPE_SPEED_INITIAL_MS +
+      POST_TYPE_HOLD_INITIAL_MS +
+      180;
+    const id = window.setTimeout(() => setWelcomeTypingComplete(true), ms);
+    return () => window.clearTimeout(id);
+  }, [frozenWelcome, prefersReducedMotion]);
+
+  /** Opacidade discreta só nas trocas PT ↔ EN (não no primeiro render estático). */
+  const [welcomeSwapOpacity, setWelcomeSwapOpacity] = React.useState(1);
+  const skipWelcomeSwapFx = React.useRef(true);
+  React.useEffect(() => {
+    if (!welcomeTypingComplete) return;
+    if (skipWelcomeSwapFx.current) {
+      skipWelcomeSwapFx.current = false;
+      return;
+    }
+    setWelcomeSwapOpacity(0.45);
+    const id = window.setTimeout(() => setWelcomeSwapOpacity(1), 110);
+    return () => window.clearTimeout(id);
+  }, [locale, welcomeTypingComplete]);
 
   const bottomNavRef = React.useRef<HTMLElement | null>(null);
   /** Nº de colunas (responsive, min. 464px/slot); `repeat(n,1fr)` + frames invisíveis na última fila. */
@@ -234,7 +268,7 @@ export default function Home() {
     };
   }, [projects.length, projectsView, prefersReducedMotion]);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     if (!languageReady) return;
 
     const isLocaleChange =
@@ -243,38 +277,10 @@ export default function Home() {
     prevWelcomeRef.current = welcomeFull;
 
     if (isLocaleChange) {
-      setRevealKey((k) => k + 1);
+      flushSync(() => {
+        setRevealKey((k) => k + 1);
+      });
     }
-
-    if (hasTypedWelcomeOnceRef.current) {
-      setTyped(welcomeFull);
-      setTypingDone(true);
-      return;
-    }
-    hasTypedWelcomeOnceRef.current = true;
-
-    setTyped("");
-    setTypingDone(false);
-
-    const speed = TYPE_SPEED_INITIAL_MS;
-    const postHold = POST_TYPE_HOLD_INITIAL_MS;
-
-    let i = 0;
-    const typeInterval = setInterval(() => {
-      i += 1;
-      setTyped(welcomeFull.slice(0, i));
-      if (i >= welcomeFull.length) clearInterval(typeInterval);
-    }, speed);
-
-    const typingDoneT = setTimeout(
-      () => setTypingDone(true),
-      welcomeFull.length * speed + postHold,
-    );
-
-    return () => {
-      clearInterval(typeInterval);
-      clearTimeout(typingDoneT);
-    };
   }, [languageReady, welcomeFull]);
 
   React.useEffect(() => {
@@ -309,54 +315,53 @@ export default function Home() {
 
   const shouldScrambleOnThisRender = revealKey > 0;
 
-  /** Altura do parágrafo de intro só do idioma ativo → o bloco encolhe/cresce e o flex recentraliza suavemente (min-height com transição). */
+  const introBlockCount = dictionary.intro.length;
+  const paragraphHeightsReady = React.useMemo(() => {
+    if (introParagraphHeights.length < introBlockCount) return false;
+    return introParagraphHeights
+      .slice(0, introBlockCount)
+      .every((h) => h > 0);
+  }, [introBlockCount, introParagraphHeights]);
+
+  const handleIntroLocaleToggle = React.useCallback(() => {
+    if (!languageReady) return;
+    toggleLocale();
+  }, [languageReady, toggleLocale]);
+
+  /** Por índice de parágrafo: ceil(max(altura PT, altura EN)) — blocos independentes, layout fixo. */
   React.useLayoutEffect(() => {
     if (!introVisible) return;
 
     const measure = () => {
-      const pt = measurePtRef.current?.getBoundingClientRect().height ?? 0;
-      const en = measureEnRef.current?.getBoundingClientRect().height ?? 0;
-      const target = locale === "pt" ? pt : en;
-      const fallback = Math.max(pt, en);
-      const next = Math.ceil(target > 0 ? target : fallback);
-      if (next <= 0) return;
-
-      const prev = lastIntroMinHeightRef.current;
-      const delta = prev === null ? 0 : next - prev;
-      const threshold = 2;
-      if (prev === null) {
-        setIntroHeightMotion({
-          durationMs: INTRO_MIN_HEIGHT_MS,
-          easing: INTRO_BLOCK_EASE,
-        });
-      } else if (delta > threshold) {
-        setIntroHeightMotion({
-          durationMs: INTRO_HEIGHT_EXPAND_MS,
-          easing: INTRO_HEIGHT_EXPAND_EASE,
-        });
-      } else if (delta < -threshold) {
-        setIntroHeightMotion({
-          durationMs: INTRO_HEIGHT_SHRINK_MS,
-          easing: INTRO_HEIGHT_SHRINK_EASE,
-        });
+      const n = Math.min(
+        dictionaries.pt.intro.length,
+        dictionaries.en.intro.length,
+      );
+      const next: number[] = [];
+      for (let i = 0; i < n; i += 1) {
+        const pt =
+          measurePtParaRefs.current[i]?.getBoundingClientRect().height ?? 0;
+        const en =
+          measureEnParaRefs.current[i]?.getBoundingClientRect().height ?? 0;
+        next[i] = Math.ceil(Math.max(pt, en, 1));
       }
-
-      lastIntroMinHeightRef.current = next;
-      setIntroMinHeight(next);
+      setIntroParagraphHeights(next);
     };
 
     measure();
-    const ptEl = measurePtRef.current;
-    const enEl = measureEnRef.current;
     const ro = new ResizeObserver(measure);
-    if (ptEl) ro.observe(ptEl);
-    if (enEl) ro.observe(enEl);
+    for (const el of measurePtParaRefs.current) {
+      if (el) ro.observe(el);
+    }
+    for (const el of measureEnParaRefs.current) {
+      if (el) ro.observe(el);
+    }
     window.addEventListener("resize", measure);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [introVisible, locale]);
+  }, [introVisible]);
 
   /** Ao sair de Projetos (futuro) ou forçar reset, limpa timers/estado da nav. */
   React.useEffect(() => {
@@ -453,45 +458,36 @@ export default function Home() {
   }, [openDesignGrid]);
 
   const renderIntro = React.useCallback(
-    (text: string, idx: number) => {
-      const parts = text.split(
-        /(\{UPM\}|\{SME\}|\{PAPELZINHO\}|\{ORLA\}|\{ADA\})/g,
+    (paragraphRaw: string, idx: number) => {
+      const mirrorDict = getMirrorDictionary(locale);
+      const mirrorRaw = mirrorDict.intro[idx] ?? "";
+      const { currentParts, mirrorParts } = prepareIntroParagraphDual(
+        paragraphRaw,
+        mirrorRaw,
       );
 
       return (
         <>
           {(() => {
             const out: React.ReactNode[] = [];
-            for (let i = 0; i < parts.length; i += 1) {
-              const part = parts[i] ?? "";
-
-              const maybeConsumeLeadingPunctuation = () => {
-                const next = parts[i + 1] ?? "";
-                const m = next.match(/^([,.;:!?]+)/);
-                if (!m) return null;
-                const punct = m[1] ?? "";
-                parts[i + 1] = next.slice(punct.length);
-                return punct;
-              };
+            for (let i = 0; i < currentParts.length; i += 1) {
+              const part = currentParts[i] ?? "";
+              const crossfadeFrom = shouldScrambleOnThisRender
+                ? segmentResolvedText(mirrorParts[i] ?? "", mirrorDict)
+                : undefined;
 
               if (part === "{UPM}") {
-                const punct = maybeConsumeLeadingPunctuation();
+                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
                 out.push(
-                  <span key={`upm-wrap-${idx}-${i}`} className="inline">
-                    <Button
-                      asChild
-                      variant="link"
-                      size="xs"
-                      className={introLinkButtonClass}
-                    >
-                      <a
-                        href="https://www.mackenzie.br/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {dictionary.upmLabel}
-                      </a>
-                    </Button>
+                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
+                    <IntroExternalLink
+                      slotId="upm"
+                      href="https://www.mackenzie.br/"
+                      label={dictionary.upmLabel}
+                      crossfadeFrom={crossfadeFrom}
+                      play={shouldScrambleOnThisRender}
+                      startDelayMs={introPartDelay(idx, i)}
+                    />
                     {punct}
                   </span>,
                 );
@@ -499,23 +495,17 @@ export default function Home() {
               }
 
               if (part === "{SME}") {
-                const punct = maybeConsumeLeadingPunctuation();
+                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
                 out.push(
-                  <span key={`sme-wrap-${idx}-${i}`} className="inline">
-                    <Button
-                      asChild
-                      variant="link"
-                      size="xs"
-                      className={introLinkButtonClass}
-                    >
-                      <a
-                        href="https://sistemasdeensino.mackenzie.br/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        SME
-                      </a>
-                    </Button>
+                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
+                    <IntroExternalLink
+                      slotId="sme"
+                      href="https://sistemasdeensino.mackenzie.br/"
+                      label="SME"
+                      crossfadeFrom={crossfadeFrom}
+                      play={shouldScrambleOnThisRender}
+                      startDelayMs={introPartDelay(idx, i)}
+                    />
                     {punct}
                   </span>,
                 );
@@ -523,23 +513,17 @@ export default function Home() {
               }
 
               if (part === "{PAPELZINHO}") {
-                const punct = maybeConsumeLeadingPunctuation();
+                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
                 out.push(
-                  <span key={`papel-wrap-${idx}-${i}`} className="inline">
-                    <Button
-                      asChild
-                      variant="link"
-                      size="xs"
-                      className={introLinkButtonClass}
-                    >
-                      <a
-                        href="https://papelzinho.com/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {dictionary.papelzinhoLabel}
-                      </a>
-                    </Button>
+                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
+                    <IntroExternalLink
+                      slotId="papelzinho"
+                      href="https://papelzinho.com/"
+                      label={dictionary.papelzinhoLabel}
+                      crossfadeFrom={crossfadeFrom}
+                      play={shouldScrambleOnThisRender}
+                      startDelayMs={introPartDelay(idx, i)}
+                    />
                     {punct}
                   </span>,
                 );
@@ -547,23 +531,17 @@ export default function Home() {
               }
 
               if (part === "{ORLA}") {
-                const punct = maybeConsumeLeadingPunctuation();
+                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
                 out.push(
-                  <span key={`orla-wrap-${idx}-${i}`} className="inline">
-                    <Button
-                      asChild
-                      variant="link"
-                      size="xs"
-                      className={introLinkButtonClass}
-                    >
-                      <a
-                        href="https://www.orla.tech/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {dictionary.orlaLabel}
-                      </a>
-                    </Button>
+                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
+                    <IntroExternalLink
+                      slotId="orla"
+                      href="https://www.orla.tech/"
+                      label={dictionary.orlaLabel}
+                      crossfadeFrom={crossfadeFrom}
+                      play={shouldScrambleOnThisRender}
+                      startDelayMs={introPartDelay(idx, i)}
+                    />
                     {punct}
                   </span>,
                 );
@@ -571,23 +549,17 @@ export default function Home() {
               }
 
               if (part === "{ADA}") {
-                const punct = maybeConsumeLeadingPunctuation();
+                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
                 out.push(
-                  <span key={`ada-wrap-${idx}-${i}`} className="inline">
-                    <Button
-                      asChild
-                      variant="link"
-                      size="xs"
-                      className={introLinkButtonClass}
-                    >
-                      <a
-                        href="https://developer.apple.com/academies/"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {dictionary.appleDeveloperAcademyLabel}
-                      </a>
-                    </Button>
+                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
+                    <IntroExternalLink
+                      slotId="ada"
+                      href="https://developer.apple.com/academies/"
+                      label={dictionary.appleDeveloperAcademyLabel}
+                      crossfadeFrom={crossfadeFrom}
+                      play={shouldScrambleOnThisRender}
+                      startDelayMs={introPartDelay(idx, i)}
+                    />
                     {punct}
                   </span>,
                 );
@@ -597,15 +569,21 @@ export default function Home() {
               if (!part) continue;
 
               out.push(
-                <ScrambleText
-                  key={`intro-part-${revealKey}-${idx}-${i}-${part}`}
+                <AnimeScrambleText
+                  key={`intro-seg-${idx}-${i}`}
+                  mode="phrase"
                   text={part}
-                  scramble={shouldScrambleOnThisRender}
-                  durationMs={900}
-                  startDelayMs={idx * 160}
-                  tickMs={52}
-                  maxSwapsPerChar={2}
-                  className="whitespace-pre-wrap"
+                  fromText={crossfadeFrom}
+                  play={shouldScrambleOnThisRender}
+                  startDelayMs={introPartDelay(idx, i)}
+                  revealRate={INTRO_SCRAMBLE.revealRate}
+                  settleDuration={INTRO_SCRAMBLE.settleDuration}
+                  settleRate={INTRO_SCRAMBLE.settleRate}
+                  scrambleEase={INTRO_SCRAMBLE.scrambleEase}
+                  scrambleOverride={INTRO_SCRAMBLE.scrambleOverride}
+                  chars={INTRO_SCRAMBLE.chars}
+                  from={INTRO_SCRAMBLE.from}
+                  className={INTRO_SCRAMBLE_SEGMENT_CLASS}
                 />,
               );
             }
@@ -614,14 +592,7 @@ export default function Home() {
         </>
       );
     },
-    [
-      dictionary.upmLabel,
-      dictionary.papelzinhoLabel,
-      dictionary.orlaLabel,
-      dictionary.appleDeveloperAcademyLabel,
-      revealKey,
-      shouldScrambleOnThisRender,
-    ],
+    [dictionary, locale, shouldScrambleOnThisRender],
   );
 
   const renderIntroStatic = React.useCallback((text: string, idx: number) => {
@@ -652,7 +623,7 @@ export default function Home() {
                     asChild
                     variant="link"
                     size="xs"
-                    className={introLinkButtonClass}
+                    className={INTRO_LINK_BUTTON_CLASS}
                   >
                     <a
                       href="https://www.mackenzie.br/"
@@ -676,7 +647,7 @@ export default function Home() {
                     asChild
                     variant="link"
                     size="xs"
-                    className={introLinkButtonClass}
+                    className={INTRO_LINK_BUTTON_CLASS}
                   >
                     <a
                       href="https://sistemasdeensino.mackenzie.br/"
@@ -700,7 +671,7 @@ export default function Home() {
                     asChild
                     variant="link"
                     size="xs"
-                    className={introLinkButtonClass}
+                    className={INTRO_LINK_BUTTON_CLASS}
                   >
                     <a
                       href="https://papelzinho.com/"
@@ -724,7 +695,7 @@ export default function Home() {
                     asChild
                     variant="link"
                     size="xs"
-                    className={introLinkButtonClass}
+                    className={INTRO_LINK_BUTTON_CLASS}
                   >
                     <a
                       href="https://www.orla.tech/"
@@ -748,7 +719,7 @@ export default function Home() {
                     asChild
                     variant="link"
                     size="xs"
-                    className={introLinkButtonClass}
+                    className={INTRO_LINK_BUTTON_CLASS}
                   >
                     <a
                       href="https://developer.apple.com/academies/"
@@ -857,7 +828,7 @@ export default function Home() {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={toggleLocale}
+          onClick={handleIntroLocaleToggle}
           aria-label="Alternar idioma"
           className="font-mono text-[12px] tracking-wide"
         >
@@ -895,25 +866,37 @@ export default function Home() {
                 aria-label={welcomeFull}
                 className="w-full text-center font-serif text-[14px] italic leading-[1.3] text-foreground"
               >
-                {!typingDone ? (
-                  <>
-                    <span aria-hidden="true">{typed}</span>
-                    <span
-                      aria-hidden="true"
-                      className="animate-caret ml-0.5 inline-block h-[0.9em] w-[1.5px] translate-y-[1px] bg-current align-middle"
-                    />
-                  </>
-                ) : revealKey > 0 ? (
-                  <ScrambleText
-                    key={`welcome-scramble-${revealKey}-${welcomeFull}`}
-                    text={welcomeFull}
-                    scramble
-                    durationMs={620}
-                    tickMs={48}
-                    maxSwapsPerChar={2}
-                  />
-                ) : (
+                {prefersReducedMotion ? (
                   <span aria-hidden="true">{welcomeFull}</span>
+                ) : !welcomeTypingComplete && frozenWelcome ? (
+                  <span className="inline-flex items-baseline justify-center gap-0">
+                    <TypeAnimation
+                      key="welcome-typewriter-once"
+                      sequence={[frozenWelcome]}
+                      wrapper="span"
+                      speed={{
+                        type: "keyStrokeDelayInMs",
+                        value: TYPE_SPEED_INITIAL_MS,
+                      }}
+                      cursor={false}
+                      repeat={0}
+                      preRenderFirstString={false}
+                      className="inline-block"
+                      aria-hidden
+                    />
+                    <span
+                      aria-hidden
+                      className="welcome-title-caret pointer-events-none inline-block h-[1.12em] w-[2px] shrink-0 rounded-[1px] bg-foreground/90 align-baseline"
+                    />
+                  </span>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="inline-block transition-opacity duration-[110ms] ease-out"
+                    style={{ opacity: welcomeSwapOpacity }}
+                  >
+                    {welcomeFull}
+                  </span>
                 )}
               </h1>
 
@@ -928,29 +911,48 @@ export default function Home() {
                 <div className="min-h-0 overflow-hidden">
                   <div
                     className={cn(
-                      "space-y-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground",
-                      "motion-reduce:transition-none",
-                      introVisible
-                        ? "translate-y-0 opacity-100 blur-0"
-                        : cn(
-                            "opacity-0",
-                            prefersReducedMotion
-                              ? "translate-y-0 blur-0"
-                              : "translate-y-3 blur-[1.5px]",
-                          ),
+                      "w-full shrink-0",
+                      introVisible &&
+                        !paragraphHeightsReady &&
+                        "min-h-[min(50vh,28rem)]",
                     )}
-                    style={{
-                      minHeight: introMinHeight
-                        ? `${introMinHeight}px`
-                        : undefined,
-                      transition: prefersReducedMotion
-                        ? "opacity 320ms ease-out"
-                        : `min-height ${introHeightMotion.durationMs}ms ${introHeightMotion.easing}, opacity 900ms cubic-bezier(0.22, 1, 0.36, 1), transform 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms cubic-bezier(0.22, 1, 0.36, 1)`,
-                    }}
                   >
-                    {dictionary.intro.map((paragraph, idx) => (
-                      <p key={idx}>{renderIntro(paragraph, idx)}</p>
-                    ))}
+                    <div
+                      className={cn(
+                        INTRO_BODY_STACK_CLASS,
+                        "pointer-events-auto",
+                        "motion-reduce:transition-none",
+                        introVisible
+                          ? "opacity-100 blur-0"
+                          : cn(
+                              "opacity-0",
+                              prefersReducedMotion
+                                ? "blur-0"
+                                : "blur-[1.5px]",
+                            ),
+                      )}
+                      style={{
+                        transition: prefersReducedMotion
+                          ? "opacity 320ms ease-out"
+                          : "opacity 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms cubic-bezier(0.22, 1, 0.36, 1)",
+                      }}
+                    >
+                      {dictionary.intro.map((paragraph, idx) => (
+                        <div
+                          key={`intro-block-${idx}`}
+                          className="relative w-full shrink-0"
+                          style={{
+                            minHeight:
+                              introParagraphHeights[idx] != null
+                                ? `${introParagraphHeights[idx]}px`
+                                : undefined,
+                            contain: "layout paint",
+                          }}
+                        >
+                          <p className="m-0">{renderIntro(paragraph, idx)}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1111,20 +1113,30 @@ export default function Home() {
           className="pointer-events-none absolute left-[-9999px] top-0 w-full max-w-[20rem]"
           style={{ visibility: "hidden" }}
         >
-          <div
-            ref={measurePtRef}
-            className="space-y-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground"
-          >
+          <div className={INTRO_BODY_STACK_CLASS}>
             {dictionaries.pt.intro.map((p, idx) => (
-              <p key={`pt-${idx}`}>{renderIntroStatic(p, idx)}</p>
+              <p
+                key={`pt-${idx}`}
+                ref={(el) => {
+                  measurePtParaRefs.current[idx] = el;
+                }}
+                className="m-0"
+              >
+                {renderIntroStatic(p, idx)}
+              </p>
             ))}
           </div>
-          <div
-            ref={measureEnRef}
-            className="space-y-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground"
-          >
+          <div className={INTRO_BODY_STACK_CLASS}>
             {dictionaries.en.intro.map((p, idx) => (
-              <p key={`en-${idx}`}>{renderIntroStatic(p, idx)}</p>
+              <p
+                key={`en-${idx}`}
+                ref={(el) => {
+                  measureEnParaRefs.current[idx] = el;
+                }}
+                className="m-0"
+              >
+                {renderIntroStatic(p, idx)}
+              </p>
             ))}
           </div>
         </div>
