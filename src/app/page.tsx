@@ -24,14 +24,15 @@ import {
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
 import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
+import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 
 const TYPE_SPEED_INITIAL_MS = 90;
 const POST_TYPE_HOLD_INITIAL_MS = 320;
 const DRAMATIC_PAUSE_MS = 1050;
 const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
 const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 700;
-/** Respiro depois do chrome aparecer antes de revelar UI secundária (ex.: PullTab). */
-const SUPPORTING_UI_REVEAL_DELAY_MS = CHROME_REVEAL_DELAY_MS + 520;
+/** Respiro depois da nav do hero ficar visível antes de revelar UI secundária (ex.: PullTab). */
+const SUPPORTING_UI_AFTER_CHROME_MS = 520;
 
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
@@ -86,6 +87,8 @@ export default function Home() {
   const welcomeFull = dictionary.welcome;
   const [introVisible, setIntroVisible] = React.useState(false);
   const [chromeVisible, setChromeVisible] = React.useState(false);
+  /** Mantém o mesmo timing que `chromeVisible` nesta branch (intro scramble; sem etapa braille). */
+  const [heroNavVisible, setHeroNavVisible] = React.useState(false);
   const [projectsView, setProjectsView] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
   const prevWelcomeRef = React.useRef<string | null>(null);
@@ -294,17 +297,25 @@ export default function Home() {
       () => setChromeVisible(true),
       initialTypingMs + CHROME_REVEAL_DELAY_MS,
     );
-    const supportingT = setTimeout(
-      () => markChromeReady(),
-      initialTypingMs + SUPPORTING_UI_REVEAL_DELAY_MS,
-    );
     return () => {
       clearTimeout(introT);
       clearTimeout(chromeT);
-      clearTimeout(supportingT);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [languageReady]);
+
+  React.useEffect(() => {
+    setHeroNavVisible(chromeVisible);
+  }, [chromeVisible]);
+
+  React.useEffect(() => {
+    if (!heroNavVisible) return;
+    const id = window.setTimeout(
+      () => markChromeReady(),
+      SUPPORTING_UI_AFTER_CHROME_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [heroNavVisible]);
 
   const sections = [
     { label: dictionary.sections.design, href: "#design", isProjects: true },
@@ -761,7 +772,7 @@ export default function Home() {
       if (isHero) {
         if (navItemPhase === "exiting") opacity = 0;
         else if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 0;
-        else opacity = chromeVisible ? 1 : 0;
+        else opacity = heroNavVisible ? 1 : 0;
       } else {
         if (navItemPhase === "entering" || navItemPhase === "entered") opacity = 1;
         else opacity = 0;
@@ -772,7 +783,7 @@ export default function Home() {
         if (navItemPhase === "exiting") {
           delayMs = (lastIdx - idx) * NAV_ITEM_STAGGER_MS;
         } else if (!projectsView) {
-          delayMs = chromeVisible ? idx * 130 : 0;
+          delayMs = heroNavVisible ? idx * 130 : 0;
         }
       } else {
         if (navItemPhase === "entering") {
@@ -781,9 +792,9 @@ export default function Home() {
       }
 
       return (
-        <div
+        <li
           key={`${opts.scope}-${section.href}`}
-          className="flex-1"
+          className="relative z-[1] min-w-0 flex-1"
           style={{
             opacity,
             transition: `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
@@ -794,7 +805,7 @@ export default function Home() {
             asChild
             variant="ghost"
             size="sm"
-            className="w-full font-mono text-[12px] tracking-wide"
+            className="relative z-[1] w-full rounded-none font-mono text-[12px] tracking-wide"
           >
             <a
               href={section.href}
@@ -807,7 +818,7 @@ export default function Home() {
               {section.label}
             </a>
           </Button>
-        </div>
+        </li>
       );
     });
   };
@@ -959,12 +970,15 @@ export default function Home() {
             </div>
 
             <nav
-              className={cn(
-                navContainerClass,
-                "pointer-events-auto relative z-20",
-              )}
+              aria-label="Secções do site"
+              className="pointer-events-auto relative z-20"
             >
-              {renderNavButtons({ scope: "hero" })}
+              <MagneticNavUl
+                className={navContainerClass}
+                magnetEnabled={heroNavVisible && !projectsView}
+              >
+                {renderNavButtons({ scope: "hero" })}
+              </MagneticNavUl>
             </nav>
           </div>
         </div>
@@ -1096,12 +1110,12 @@ export default function Home() {
           </div>
           <nav
             ref={bottomNavRef}
-            className={cn(
-              navContainerClass,
-              "fixed inset-x-0 bottom-0 z-30 pointer-events-auto",
-            )}
+            aria-label="Secções do site"
+            className="fixed inset-x-0 bottom-0 z-30 pointer-events-auto"
           >
-            {renderNavButtons({ scope: "bottom" })}
+            <MagneticNavUl className={navContainerClass} magnetEnabled={projectsView}>
+              {renderNavButtons({ scope: "bottom" })}
+            </MagneticNavUl>
           </nav>
         </section>
       </main>
