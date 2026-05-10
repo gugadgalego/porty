@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 /** Frame único: até 600px de largura, centrado na viewport; conteúdo ao topo e à esquerda. */
 const FRAME =
-  "flex w-full max-w-[600px] flex-col items-stretch text-left";
+  "flex w-full min-w-0 max-w-[600px] flex-col items-stretch text-left";
 
 /** Espaço vertical entre secções (24px). */
 const SECTION_GAP = "gap-[24px]";
@@ -33,7 +33,7 @@ export function DesignPaperProjectView({
   return (
     <div
       className={cn(
-        "flex min-h-svh w-full flex-col items-center bg-background pb-[calc(2.75rem+env(safe-area-inset-bottom,0px))] text-foreground antialiased",
+        "flex min-h-svh w-full min-w-0 max-w-full flex-col items-center overflow-x-hidden bg-background pb-[calc(2.75rem+env(safe-area-inset-bottom,0px))] text-foreground antialiased",
         className,
       )}
     >
