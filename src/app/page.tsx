@@ -27,10 +27,10 @@ import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
 import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 
 const TYPE_SPEED_INITIAL_MS = 90;
-const POST_TYPE_HOLD_INITIAL_MS = 320;
-const DRAMATIC_PAUSE_MS = 1050;
+const POST_TYPE_HOLD_INITIAL_MS = 180;
+const DRAMATIC_PAUSE_MS = 120;
 const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
-const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 700;
+const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 360;
 /** Respiro depois da nav do hero ficar visível antes de revelar UI secundária (ex.: PullTab). */
 const SUPPORTING_UI_AFTER_CHROME_MS = 520;
 
@@ -62,6 +62,12 @@ const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
 const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
 const NAV_SEQUENCE_BUFFER_MS = 40;
 /** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
+const INTRO_ENTRANCE_DURATION_MS = 560;
+const INTRO_ENTRANCE_STAGGER_MS = 92;
+const INTRO_ENTRANCE_DELAY_MS = 40;
+const INTRO_ENTRANCE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+const HERO_NAV_REVEAL_DURATION_MS = 520;
+const HERO_NAV_REVEAL_STAGGER_MS = 72;
 
 /** Corpo do intro: stack modular (`gap` = mesmo ritmo que `space-y-5`). */
 const INTRO_BODY_STACK_CLASS = cn(
@@ -108,13 +114,6 @@ export default function Home() {
   const measurePtParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
   const measureEnParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
 
-  /** Primeira string do título capturada uma vez — o typing não reinicia ao mudar locale. */
-  const [frozenWelcome, setFrozenWelcome] = React.useState<string | null>(null);
-  React.useEffect(() => {
-    if (!languageReady) return;
-    setFrozenWelcome((prev) => prev ?? dictionary.welcome);
-  }, [languageReady, dictionary.welcome]);
-
   const [welcomeTypingComplete, setWelcomeTypingComplete] =
     React.useState(false);
   React.useEffect(() => {
@@ -122,28 +121,13 @@ export default function Home() {
       setWelcomeTypingComplete(true);
       return;
     }
-    if (!frozenWelcome) return;
     const ms =
-      frozenWelcome.length * TYPE_SPEED_INITIAL_MS +
+      welcomeFull.length * TYPE_SPEED_INITIAL_MS +
       POST_TYPE_HOLD_INITIAL_MS +
       180;
     const id = window.setTimeout(() => setWelcomeTypingComplete(true), ms);
     return () => window.clearTimeout(id);
-  }, [frozenWelcome, prefersReducedMotion]);
-
-  /** Opacidade discreta só nas trocas PT ↔ EN (não no primeiro render estático). */
-  const [welcomeSwapOpacity, setWelcomeSwapOpacity] = React.useState(1);
-  const skipWelcomeSwapFx = React.useRef(true);
-  React.useEffect(() => {
-    if (!welcomeTypingComplete) return;
-    if (skipWelcomeSwapFx.current) {
-      skipWelcomeSwapFx.current = false;
-      return;
-    }
-    setWelcomeSwapOpacity(0.45);
-    const id = window.setTimeout(() => setWelcomeSwapOpacity(1), 110);
-    return () => window.clearTimeout(id);
-  }, [locale, welcomeTypingComplete]);
+  }, [welcomeFull, prefersReducedMotion]);
 
   const bottomNavRef = React.useRef<HTMLElement | null>(null);
   /** Nº de colunas (responsive, min. 464px/slot); `repeat(n,1fr)` + frames invisíveis na última fila. */
@@ -287,22 +271,20 @@ export default function Home() {
   }, [languageReady, welcomeFull]);
 
   React.useEffect(() => {
-    if (!languageReady) return;
-    const initialTypingMs = welcomeFull.length * TYPE_SPEED_INITIAL_MS;
-    const introT = setTimeout(
+    if (!languageReady || !welcomeTypingComplete) return;
+    const introT = window.setTimeout(
       () => setIntroVisible(true),
-      initialTypingMs + INTRO_REVEAL_DELAY_MS,
+      INTRO_REVEAL_DELAY_MS,
     );
-    const chromeT = setTimeout(
+    const chromeT = window.setTimeout(
       () => setChromeVisible(true),
-      initialTypingMs + CHROME_REVEAL_DELAY_MS,
+      CHROME_REVEAL_DELAY_MS,
     );
     return () => {
-      clearTimeout(introT);
-      clearTimeout(chromeT);
+      window.clearTimeout(introT);
+      window.clearTimeout(chromeT);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [languageReady]);
+  }, [languageReady, welcomeTypingComplete]);
 
   React.useEffect(() => {
     setHeroNavVisible(chromeVisible);
@@ -783,7 +765,7 @@ export default function Home() {
         if (navItemPhase === "exiting") {
           delayMs = (lastIdx - idx) * NAV_ITEM_STAGGER_MS;
         } else if (!projectsView) {
-          delayMs = heroNavVisible ? idx * 130 : 0;
+          delayMs = heroNavVisible ? idx * HERO_NAV_REVEAL_STAGGER_MS : 0;
         }
       } else {
         if (navItemPhase === "entering") {
@@ -791,13 +773,26 @@ export default function Home() {
         }
       }
 
+      const navHidden =
+        opacity === 0 &&
+        (isHero
+          ? navItemPhase !== "exiting"
+          : navItemPhase !== "entering" && navItemPhase !== "entered");
+
       return (
         <li
           key={`${opts.scope}-${section.href}`}
           className="relative z-[1] min-w-0 flex-1"
           style={{
             opacity,
-            transition: `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
+            transform:
+              isHero && navHidden
+                ? "translate3d(0, 6px, 0)"
+                : "translate3d(0, 0, 0)",
+            filter: isHero && navHidden ? "blur(2px)" : "blur(0)",
+            transition: isHero
+              ? `opacity ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`
+              : `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
             transitionDelay: `${delayMs}ms`,
           }}
         >
@@ -879,35 +874,21 @@ export default function Home() {
               >
                 {prefersReducedMotion ? (
                   <span aria-hidden="true">{welcomeFull}</span>
-                ) : !welcomeTypingComplete && frozenWelcome ? (
-                  <span className="inline-flex items-baseline justify-center gap-0">
-                    <TypeAnimation
-                      key="welcome-typewriter-once"
-                      sequence={[frozenWelcome]}
-                      wrapper="span"
-                      speed={{
-                        type: "keyStrokeDelayInMs",
-                        value: TYPE_SPEED_INITIAL_MS,
-                      }}
-                      cursor={false}
-                      repeat={0}
-                      preRenderFirstString={false}
-                      className="inline-block"
-                      aria-hidden
-                    />
-                    <span
-                      aria-hidden
-                      className="welcome-title-caret pointer-events-none inline-block h-[1.12em] w-[2px] shrink-0 rounded-[1px] bg-foreground/90 align-baseline"
-                    />
-                  </span>
                 ) : (
-                  <span
-                    aria-hidden="true"
-                    className="inline-block transition-opacity duration-[110ms] ease-out"
-                    style={{ opacity: welcomeSwapOpacity }}
-                  >
-                    {welcomeFull}
-                  </span>
+                  <TypeAnimation
+                    key={`welcome-typewriter-${locale}`}
+                    sequence={[welcomeFull]}
+                    wrapper="span"
+                    speed={{
+                      type: "keyStrokeDelayInMs",
+                      value: TYPE_SPEED_INITIAL_MS,
+                    }}
+                    cursor
+                    repeat={0}
+                    preRenderFirstString={false}
+                    className="inline-block"
+                    aria-hidden
+                  />
                 )}
               </h1>
 
@@ -933,20 +914,7 @@ export default function Home() {
                         INTRO_BODY_STACK_CLASS,
                         "pointer-events-auto",
                         "motion-reduce:transition-none",
-                        introVisible
-                          ? "opacity-100 blur-0"
-                          : cn(
-                              "opacity-0",
-                              prefersReducedMotion
-                                ? "blur-0"
-                                : "blur-[1.5px]",
-                            ),
                       )}
-                      style={{
-                        transition: prefersReducedMotion
-                          ? "opacity 320ms ease-out"
-                          : "opacity 900ms cubic-bezier(0.22, 1, 0.36, 1), filter 900ms cubic-bezier(0.22, 1, 0.36, 1)",
-                      }}
                     >
                       {dictionary.intro.map((paragraph, idx) => (
                         <div
@@ -960,7 +928,29 @@ export default function Home() {
                             contain: "layout paint",
                           }}
                         >
-                          <p className="m-0">{renderIntro(paragraph, idx)}</p>
+                          <p
+                            className="m-0 motion-reduce:transition-none"
+                            style={{
+                              opacity: introVisible ? 1 : 0,
+                              transform:
+                                introVisible || prefersReducedMotion
+                                  ? "translate3d(0, 0, 0)"
+                                  : "translate3d(0, 6px, 0)",
+                              filter:
+                                introVisible || prefersReducedMotion
+                                  ? "blur(0)"
+                                  : "blur(2px)",
+                              transition: prefersReducedMotion
+                                ? "opacity 260ms ease-out"
+                                : `opacity ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`,
+                              transitionDelay:
+                                introVisible && !prefersReducedMotion
+                                  ? `${INTRO_ENTRANCE_DELAY_MS + idx * INTRO_ENTRANCE_STAGGER_MS}ms`
+                                  : "0ms",
+                            }}
+                          >
+                            {renderIntro(paragraph, idx)}
+                          </p>
                         </div>
                       ))}
                     </div>
