@@ -23,7 +23,11 @@ import {
 } from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
-import { SITE_BOTTOM_NAV_CONTAINER_CLASS } from "@/components/site-bottom-nav";
+import {
+  SITE_BOTTOM_NAV_BUTTON_CLASS,
+  SITE_BOTTOM_NAV_CONTAINER_CLASS,
+  SITE_BOTTOM_NAV_ITEM_CLASS,
+} from "@/components/site-bottom-nav";
 import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 
 const TYPE_SPEED_INITIAL_MS = 90;
@@ -782,7 +786,7 @@ export default function Home() {
       return (
         <li
           key={`${opts.scope}-${section.href}`}
-          className="relative z-[1] min-w-0 flex-1"
+          className={SITE_BOTTOM_NAV_ITEM_CLASS}
           style={{
             opacity,
             transform:
@@ -800,7 +804,7 @@ export default function Home() {
             asChild
             variant="ghost"
             size="sm"
-            className="relative z-[1] w-full rounded-none font-mono text-[12px] tracking-wide"
+            className={SITE_BOTTOM_NAV_BUTTON_CLASS}
           >
             <a
               href={section.href}
