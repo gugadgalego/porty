@@ -1,6 +1,5 @@
 "use client";
 
-import { animate, scrambleText, type JSAnimation } from "animejs";
 import * as React from "react";
 import { INTRO_SCRAMBLE } from "@/lib/intro-scramble";
 
@@ -47,7 +46,9 @@ function AnimeScrambleTextInner({
   scrambleTargetRef,
 }: AnimeScrambleTextProps) {
   const visualRef = React.useRef<HTMLSpanElement>(null);
-  const animRef = React.useRef<JSAnimation | null>(null);
+  const rafRef = React.useRef<number | null>(null);
+  const [visualText, setVisualText] = React.useState(text);
+  const visualTextRef = React.useRef(text);
 
   const getTarget = React.useCallback((): HTMLElement | null => {
     if (scrambleTargetRef) return scrambleTargetRef.current;
@@ -63,10 +64,53 @@ function AnimeScrambleTextInner({
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  const commitText = React.useCallback(
+    (next: string) => {
+      if (visualTextRef.current === next) return;
+      visualTextRef.current = next;
+      if (scrambleTargetRef) {
+        const target = scrambleTargetRef.current;
+        if (target) target.textContent = next;
+        return;
+      }
+      setVisualText(next);
+    },
+    [scrambleTargetRef],
+  );
+
   const stopAnim = React.useCallback(() => {
-    animRef.current?.revert();
-    animRef.current = null;
+    if (rafRef.current != null) {
+      window.cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
   }, []);
+
+  const orderForIndex = React.useCallback(
+    (idx: number, total: number): number => {
+      switch (from) {
+        case "right":
+          return total - idx - 1;
+        case "center":
+          return Math.abs(idx - Math.floor(total / 2)) * 2;
+        case "random":
+          return (idx * 17) % Math.max(total, 1);
+        case "auto":
+        case "left":
+        default:
+          return idx;
+      }
+    },
+    [from],
+  );
+
+  const randomCharAt = React.useCallback(
+    (idx: number, frame: number): string => {
+      if (chars.length === 0) return "";
+      const charIdx = Math.abs((idx * 13 + frame * 7) % chars.length);
+      return chars[charIdx] ?? "";
+    },
+    [chars],
+  );
 
   React.useLayoutEffect(() => {
     const apply = () => {
@@ -74,12 +118,12 @@ function AnimeScrambleTextInner({
       if (!el) return false;
       if (!play || reduceMotion) {
         stopAnim();
-        el.textContent = text;
+        commitText(text);
         return true;
       }
       if (fromText !== undefined && fromText === text) {
         stopAnim();
-        el.textContent = text;
+        commitText(text);
       }
       return true;
     };
@@ -95,7 +139,7 @@ function AnimeScrambleTextInner({
       cancelled = true;
       cancelAnimationFrame(id);
     };
-  }, [text, play, reduceMotion, fromText, stopAnim, getTarget]);
+  }, [text, play, reduceMotion, fromText, stopAnim, getTarget, commitText]);
 
   React.useEffect(() => {
     const el = getTarget();
@@ -107,33 +151,55 @@ function AnimeScrambleTextInner({
 
     const hasCrossfade =
       fromText !== undefined && fromText.length > 0 && fromText !== text;
-    el.textContent = hasCrossfade ? fromText : "";
-
-    /** Sempre progressivo (ex.: esquerda → direita); evita morph “auto” caótico. */
-    const scrambleFrom = from;
-
+    const source = hasCrossfade ? (fromText ?? "") : visualTextRef.current;
+    const sourceChars = Array.from(source);
+    const targetChars = Array.from(text);
+    const total = Math.max(sourceChars.length, targetChars.length);
+    const characterDelayMs = Math.max(4, 1000 / Math.max(revealRate, 1));
+    const randomFrameMs = Math.max(12, settleDuration / Math.max(settleRate, 1));
     const delayMs = Math.max(0, startDelayMs);
-    const delayId = window.setTimeout(() => {
-      const anim = animate(el, {
-        textContent: scrambleText({
-          text,
-          ease: scrambleEase,
-          override: scrambleOverride,
-          revealRate,
-          settleDuration,
-          settleRate,
-          chars,
-          from: scrambleFrom,
-        }),
+    const startedAt = window.performance.now();
+
+    const tick = (now: number) => {
+      const elapsed = now - startedAt;
+      let done = true;
+      const next = Array.from({ length: total }, (_, idx) => {
+        const target = targetChars[idx] ?? "";
+        const sourceChar = sourceChars[idx] ?? " ";
+        const charDelay = delayMs + orderForIndex(idx, total) * characterDelayMs;
+        const localElapsed = elapsed - charDelay;
+
+        if (localElapsed < 0) {
+          done = false;
+          if (!scrambleOverride || !target || /\s/.test(target)) {
+            return sourceChar;
+          }
+          return randomCharAt(idx, 0);
+        }
+
+        if (localElapsed < settleDuration) {
+          done = false;
+          if (!target || /\s/.test(target)) return target;
+          const frame = Math.floor(localElapsed / randomFrameMs);
+          return randomCharAt(idx, frame);
+        }
+
+        return target;
       });
-      animRef.current = anim;
-      void anim.then(() => {
-        if (animRef.current === anim) animRef.current = null;
-      });
-    }, delayMs);
+
+      commitText(next.join(""));
+
+      if (!done) {
+        rafRef.current = window.requestAnimationFrame(tick);
+      } else {
+        rafRef.current = null;
+        commitText(text);
+      }
+    };
+
+    rafRef.current = window.requestAnimationFrame(tick);
 
     return () => {
-      window.clearTimeout(delayId);
       stopAnim();
     };
   }, [
@@ -148,9 +214,11 @@ function AnimeScrambleTextInner({
     scrambleEase,
     scrambleOverride,
     chars,
-    from,
     stopAnim,
     getTarget,
+    commitText,
+    orderForIndex,
+    randomCharAt,
   ]);
 
   const ariaHidden = mode === "phrase" || mode === "decorative";
@@ -169,7 +237,9 @@ function AnimeScrambleTextInner({
         data-scramble=""
         className={className}
         aria-hidden={ariaHidden || undefined}
-      />
+      >
+        {visualText}
+      </span>
     </>
   );
 }
