@@ -25,7 +25,7 @@ export function LanguageProvider({
   const [locale, setLocaleState] = React.useState<Locale>(defaultLocale);
   const [ready, setReady] = React.useState(false);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored === "pt" || stored === "en") {
