@@ -68,7 +68,9 @@ export function MagneticNavUl({
         <span
           aria-hidden
           className={cn(
-            "pointer-events-none absolute z-0 bg-muted-foreground/18",
+            "pointer-events-none absolute z-0",
+            /* Light: mais suave ao deslizar por cima do fundo; dark mantém legibilidade. */
+            "bg-muted-foreground/8 dark:bg-muted-foreground/16",
             "transition-[left,top,width,height,opacity] duration-200 ease-out",
             "motion-reduce:transition-none",
           )}
