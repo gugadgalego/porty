@@ -2,8 +2,16 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "@phosphor-icons/react/dist/ssr";
-import { animate, scrambleText, type JSAnimation } from "animejs";
-import { useCallback, useEffect, useLayoutEffect, useRef, type FocusEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+} from "react";
+import { EditorialLocaleScramble } from "@/components/editorial-locale-scramble";
+import { INTRO_EDITORIAL_SCRAMBLE } from "@/lib/intro-scramble";
 import { cn } from "@/lib/utils";
 
 const TODOS_LABEL = "Todos";
@@ -18,6 +26,8 @@ type DesignProjectTitleLinkProps = {
   className?: string;
 };
 
+type LabelMode = "title" | "todos";
+
 export function DesignProjectTitleLink({
   title,
   ariaLabel,
@@ -25,13 +35,10 @@ export function DesignProjectTitleLink({
   className,
 }: DesignProjectTitleLinkProps) {
   const linkRef = useRef<HTMLAnchorElement>(null);
-  const visibleRef = useRef<HTMLSpanElement>(null);
-  const animRef = useRef<JSAnimation | null>(null);
   const reducedMotionRef = useRef(false);
-  const latestTitle = useRef(title);
-  const lastSyncedTitle = useRef<string | null>(null);
-
-  latestTitle.current = title;
+  const [mode, setMode] = useState<LabelMode>("title");
+  const [scrambleSession, setScrambleSession] = useState(0);
+  const [hoverScrambleStarted, setHoverScrambleStarted] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -43,83 +50,32 @@ export function DesignProjectTitleLink({
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const stopAnim = useCallback(() => {
-    if (animRef.current) {
-      animRef.current.revert();
-      animRef.current = null;
-    }
+  useLayoutEffect(() => {
+    setScrambleSession((s) => s + 1);
+  }, [title]);
+
+  const bumpScramble = useCallback(() => {
+    setScrambleSession((s) => s + 1);
   }, []);
 
-  useLayoutEffect(() => {
-    const el = visibleRef.current;
-    if (!el) return;
-    if (lastSyncedTitle.current === title) return;
-    lastSyncedTitle.current = title;
-    stopAnim();
-    el.textContent = title;
-  }, [title, stopAnim]);
-
-  useEffect(() => () => stopAnim(), [stopAnim]);
-
   const showTodos = useCallback(() => {
-    const el = visibleRef.current;
-    if (!el) return;
-
     if (reducedMotionRef.current) {
-      stopAnim();
-      el.textContent = TODOS_LABEL;
+      setMode("todos");
       return;
     }
-
-    if (el.textContent === TODOS_LABEL && !animRef.current) return;
-
-    stopAnim();
-
-    const anim = animate(el, {
-      textContent: scrambleText({
-        text: TODOS_LABEL,
-        ease: "outQuad",
-        revealRate: 72,
-        settleDuration: 220,
-      }),
-      ease: "outQuad",
-    });
-    animRef.current = anim;
-    void anim.then(() => {
-      if (animRef.current === anim) animRef.current = null;
-    });
-  }, [stopAnim]);
+    setHoverScrambleStarted(true);
+    setMode("todos");
+    bumpScramble();
+  }, [bumpScramble]);
 
   const showProjectTitle = useCallback(() => {
-    const el = visibleRef.current;
-    if (!el) return;
-
-    const t = latestTitle.current;
-
     if (reducedMotionRef.current) {
-      stopAnim();
-      el.textContent = t;
+      setMode("title");
       return;
     }
-
-    if (el.textContent === t && !animRef.current) return;
-
-    stopAnim();
-
-    const anim = animate(el, {
-      textContent: scrambleText({
-        text: t,
-        ease: "outQuad",
-        revealRate: 72,
-        settleDuration: 220,
-      }),
-      ease: "outQuad",
-    });
-    animRef.current = anim;
-    void anim.then(() => {
-      if (animRef.current === anim) animRef.current = null;
-    });
-  }, [stopAnim]);
+    setMode("title");
+    bumpScramble();
+  }, [bumpScramble]);
 
   const handlePointerEnter = useCallback(() => {
     showTodos();
@@ -143,6 +99,14 @@ export function DesignProjectTitleLink({
   const handleBlur = useCallback(() => {
     showProjectTitle();
   }, [showProjectTitle]);
+
+  const target = mode === "todos" ? TODOS_LABEL : title;
+  const source =
+    hoverScrambleStarted && mode === "todos"
+      ? title
+      : hoverScrambleStarted && mode === "title"
+        ? TODOS_LABEL
+        : undefined;
 
   return (
     <Link
@@ -182,7 +146,18 @@ export function DesignProjectTitleLink({
         >
           <ArrowLeft className="size-4 text-[#0C0A09] dark:text-[#fafaf9]" weight="regular" />
         </span>
-        <span ref={visibleRef} className={cn("min-w-0", titleSpanClass)} aria-hidden />
+        <EditorialLocaleScramble
+          target={target}
+          source={source}
+          active={hoverScrambleStarted}
+          runKey={scrambleSession}
+          duration={0.26}
+          perCharPadSec={0.01}
+          waveWidth={3}
+          characterSet={INTRO_EDITORIAL_SCRAMBLE.characterSet}
+          easeExponent={2.1}
+          className={cn("min-h-[1lh] min-w-0", titleSpanClass)}
+        />
       </span>
     </Link>
   );

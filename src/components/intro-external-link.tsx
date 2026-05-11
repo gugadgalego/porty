@@ -2,13 +2,13 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { AnimeScrambleText } from "@/components/anime-scramble-text";
-import { INTRO_SCRAMBLE } from "@/lib/intro-scramble";
+import { EditorialLocaleScramble } from "@/components/editorial-locale-scramble";
+import { INTRO_EDITORIAL_SCRAMBLE } from "@/lib/intro-scramble";
 import { cn } from "@/lib/utils";
 
 /** Label animado — alinhamento estável com o texto corrido sem forçar altura mínima artificial. */
 export const INTRO_LINK_SCRAMBLE_CLASS =
-  "inline-block max-w-full align-baseline";
+  "inline max-w-full align-baseline break-words [text-wrap:pretty]";
 
 /** Estilo partilhado pelos links inline do intro (PT/EN). */
 export const INTRO_LINK_BUTTON_CLASS = cn(
@@ -28,11 +28,14 @@ export type IntroInlineSlotId =
 type IntroExternalLinkProps = {
   href: string;
   label: string;
-  /** Mesmo id em ambos os idiomas — alinha DOM e evita remount desnecessário na troca de locale. */
   slotId: IntroInlineSlotId;
   crossfadeFrom?: string;
   play: boolean;
-  startDelayMs: number;
+  startDelayMs?: number;
+  scrambleSessionKey: number;
+  /** Onda unificada do parágrafo: o texto do label é atualizado pelo pai. */
+  waveSpanRefs?: React.MutableRefObject<Array<HTMLSpanElement | null>>;
+  waveSpanIndex?: number;
 };
 
 function IntroExternalLinkInner({
@@ -41,8 +44,45 @@ function IntroExternalLinkInner({
   slotId,
   crossfadeFrom,
   play,
-  startDelayMs,
+  startDelayMs = 0,
+  scrambleSessionKey,
+  waveSpanRefs,
+  waveSpanIndex,
 }: IntroExternalLinkProps) {
+  const wave =
+    waveSpanRefs != null && typeof waveSpanIndex === "number";
+
+  const setWaveLabelRef = React.useCallback(
+    (el: HTMLSpanElement | null) => {
+      if (waveSpanRefs != null && typeof waveSpanIndex === "number") {
+        waveSpanRefs.current[waveSpanIndex] = el;
+      }
+    },
+    [waveSpanRefs, waveSpanIndex],
+  );
+
+  if (wave) {
+    return (
+      <Button asChild variant="link" size="xs" className={INTRO_LINK_BUTTON_CLASS}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={label}
+          data-intro-slot={slotId}
+        >
+          <span ref={setWaveLabelRef} className={INTRO_LINK_SCRAMBLE_CLASS} />
+        </a>
+      </Button>
+    );
+  }
+
+  const crossfade =
+    play &&
+    crossfadeFrom !== undefined &&
+    crossfadeFrom.length > 0 &&
+    crossfadeFrom !== label;
+
   return (
     <Button asChild variant="link" size="xs" className={INTRO_LINK_BUTTON_CLASS}>
       <a
@@ -52,19 +92,16 @@ function IntroExternalLinkInner({
         aria-label={label}
         data-intro-slot={slotId}
       >
-        <AnimeScrambleText
-          mode="decorative"
-          text={label}
-          fromText={play ? crossfadeFrom : undefined}
-          play={play}
-          startDelayMs={startDelayMs}
-          revealRate={INTRO_SCRAMBLE.revealRate}
-          settleDuration={INTRO_SCRAMBLE.settleDuration}
-          settleRate={INTRO_SCRAMBLE.settleRate}
-          scrambleEase={INTRO_SCRAMBLE.scrambleEase}
-          scrambleOverride={INTRO_SCRAMBLE.scrambleOverride}
-          chars={INTRO_SCRAMBLE.chars}
-          from={INTRO_SCRAMBLE.from}
+        <EditorialLocaleScramble
+          target={label}
+          source={crossfade ? crossfadeFrom : undefined}
+          active={crossfade}
+          runKey={scrambleSessionKey}
+          staggerMs={startDelayMs}
+          duration={INTRO_EDITORIAL_SCRAMBLE.duration}
+          perCharPadSec={INTRO_EDITORIAL_SCRAMBLE.perCharPadSec}
+          characterSet={INTRO_EDITORIAL_SCRAMBLE.characterSet}
+          easeExponent={INTRO_EDITORIAL_SCRAMBLE.easeExponent}
           className={INTRO_LINK_SCRAMBLE_CLASS}
         />
       </a>
