@@ -13,7 +13,8 @@ const PLACEHOLDERS = new Set([
   "{ADA}",
 ]);
 
-function isPlaceholder(token: string): boolean {
+/** Segmento `{UPM}` / `{SME}` / etc. — índices alinhados PT/EN em `prepareIntroParagraphDual`. */
+export function isIntroPlaceholderToken(token: string): boolean {
   return PLACEHOLDERS.has(token);
 }
 
@@ -60,7 +61,7 @@ export function prepareIntroParagraphDual(
   const n = Math.min(currentParts.length, mirrorParts.length);
   for (let i = 0; i < n; i += 1) {
     const part = currentParts[i] ?? "";
-    if (!isPlaceholder(part)) continue;
+    if (!isIntroPlaceholderToken(part)) continue;
 
     const nextCur = currentParts[i + 1] ?? "";
     const nextMir = mirrorParts[i + 1] ?? "";
@@ -84,7 +85,7 @@ export function trailingPunctAfterPlaceholder(
 ): string | null {
   const parts = rawParagraph.split(INTRO_PLACEHOLDER_RE);
   const tok = parts[placeholderIndex] ?? "";
-  if (!isPlaceholder(tok)) return null;
+  if (!isIntroPlaceholderToken(tok)) return null;
   const next = parts[placeholderIndex + 1] ?? "";
   const m = next.match(/^([,.;:!?]+)/);
   return m?.[1] ?? null;
@@ -92,7 +93,7 @@ export function trailingPunctAfterPlaceholder(
 
 /** Texto animável para crossfade: resolved label ou texto corrido. */
 export function segmentResolvedText(token: string, dict: Dictionary): string {
-  return isPlaceholder(token) ? resolveIntroToken(token, dict) : token;
+  return isIntroPlaceholderToken(token) ? resolveIntroToken(token, dict) : token;
 }
 
 export function getMirrorDictionary(locale: Locale): Dictionary {

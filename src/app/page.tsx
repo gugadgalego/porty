@@ -1,26 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { flushSync } from "react-dom";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { TypeAnimation } from "react-type-animation";
-import {
-  IntroExternalLink,
-  INTRO_LINK_BUTTON_CLASS,
-} from "@/components/intro-external-link";
-import { AnimeScrambleText } from "@/components/anime-scramble-text";
+import { IntroParagraphLocaleWave } from "@/components/intro-paragraph-locale-wave";
+import { INTRO_LINK_BUTTON_CLASS } from "@/components/intro-external-link";
 import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
-import { INTRO_SCRAMBLE, introPartDelay } from "@/lib/intro-scramble";
-import {
-  getMirrorDictionary,
-  prepareIntroParagraphDual,
-  segmentResolvedText,
-  trailingPunctAfterPlaceholder,
-} from "@/lib/intro-segments";
+import { getMirrorDictionary } from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import { markChromeReady } from "@/lib/ui-chrome";
 import {
@@ -75,11 +65,8 @@ const HERO_NAV_REVEAL_STAGGER_MS = 72;
 
 /** Corpo do intro: stack modular (`gap` = mesmo ritmo que `space-y-5`). */
 const INTRO_BODY_STACK_CLASS = cn(
-  "flex w-full flex-col gap-5 text-pretty break-words text-center font-serif text-[14px] font-light leading-[1.6] tracking-[-0.02em] text-muted-foreground",
+  "flex w-full flex-col gap-5 text-center font-serif text-[14px] font-light leading-[1.65] tracking-[-0.02em] text-muted-foreground [text-wrap:pretty]",
 );
-
-/** Segmentos do scramble: preservar quebras de linha do copy; fluxo de linha normal. */
-const INTRO_SCRAMBLE_SEGMENT_CLASS = "whitespace-pre-wrap break-words";
 
 export default function Home() {
   const { dictionary, locale, toggleLocale, ready: languageReady } =
@@ -102,6 +89,12 @@ export default function Home() {
   const [projectsView, setProjectsView] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
   const prevWelcomeRef = React.useRef<string | null>(null);
+  /** Troca PT ↔ EN no welcome após o primeiro typewriter: apagar + redigitar. */
+  const [welcomeAnimCycle, setWelcomeAnimCycle] = React.useState(0);
+  const [welcomeLocalePair, setWelcomeLocalePair] = React.useState<{
+    from: string;
+    to: string;
+  } | null>(null);
 
   const [introParagraphHeights, setIntroParagraphHeights] = React.useState<
     number[]
@@ -120,18 +113,34 @@ export default function Home() {
 
   const [welcomeTypingComplete, setWelcomeTypingComplete] =
     React.useState(false);
+  const [frozenWelcomeForTypewriter, setFrozenWelcomeForTypewriter] =
+    React.useState<string | null>(null);
+
   React.useEffect(() => {
+    if (!languageReady || frozenWelcomeForTypewriter !== null) return;
+    setFrozenWelcomeForTypewriter(dictionary.welcome);
+  }, [languageReady, dictionary.welcome, frozenWelcomeForTypewriter]);
+
+  React.useEffect(() => {
+    if (!languageReady) return;
     if (prefersReducedMotion) {
       setWelcomeTypingComplete(true);
       return;
     }
+    if (welcomeTypingComplete) return;
+    if (frozenWelcomeForTypewriter === null) return;
     const ms =
-      welcomeFull.length * TYPE_SPEED_INITIAL_MS +
+      frozenWelcomeForTypewriter.length * TYPE_SPEED_INITIAL_MS +
       POST_TYPE_HOLD_INITIAL_MS +
       180;
     const id = window.setTimeout(() => setWelcomeTypingComplete(true), ms);
     return () => window.clearTimeout(id);
-  }, [welcomeFull, prefersReducedMotion]);
+  }, [
+    languageReady,
+    prefersReducedMotion,
+    welcomeTypingComplete,
+    frozenWelcomeForTypewriter,
+  ]);
 
   const bottomNavRef = React.useRef<HTMLElement | null>(null);
   /** Nº de colunas (responsive, min. 464px/slot); `repeat(n,1fr)` + frames invisíveis na última fila. */
@@ -231,10 +240,8 @@ export default function Home() {
       if (nextCols === designGridColsRef.current) return;
 
       const commit = () => {
-        flushSync(() => {
-          setDesignGridCols(nextCols);
-          designGridColsRef.current = nextCols;
-        });
+        setDesignGridCols(nextCols);
+        designGridColsRef.current = nextCols;
       };
 
       if (
@@ -262,17 +269,20 @@ export default function Home() {
   React.useLayoutEffect(() => {
     if (!languageReady) return;
 
-    const isLocaleChange =
-      prevWelcomeRef.current !== null &&
-      prevWelcomeRef.current !== welcomeFull;
-    prevWelcomeRef.current = welcomeFull;
+    const prev = prevWelcomeRef.current;
+    const curr = welcomeFull;
+    const isLocaleChange = prev !== null && prev !== curr;
 
     if (isLocaleChange) {
-      flushSync(() => {
-        setRevealKey((k) => k + 1);
-      });
+      setRevealKey((k) => k + 1);
+      if (welcomeTypingComplete) {
+        setWelcomeLocalePair({ from: prev, to: curr });
+        setWelcomeAnimCycle((c) => c + 1);
+      }
     }
-  }, [languageReady, welcomeFull]);
+
+    prevWelcomeRef.current = curr;
+  }, [languageReady, welcomeFull, welcomeTypingComplete]);
 
   React.useEffect(() => {
     if (!languageReady || !welcomeTypingComplete) return;
@@ -319,6 +329,31 @@ export default function Home() {
       .slice(0, introBlockCount)
       .every((h) => h > 0);
   }, [introBlockCount, introParagraphHeights]);
+
+  /** Altura mínima acumulada da coluna central (welcome + intro) — não encolhe na troca PT/EN. */
+  const heroBodyRef = React.useRef<HTMLDivElement | null>(null);
+  const [heroBodyMinPx, setHeroBodyMinPx] = React.useState(0);
+
+  React.useLayoutEffect(() => {
+    if (!introVisible) {
+      setHeroBodyMinPx(0);
+      return;
+    }
+    const el = heroBodyRef.current;
+    if (!el) return;
+    const h = Math.ceil(el.getBoundingClientRect().height);
+    if (h > 0) {
+      setHeroBodyMinPx((prev) => Math.max(prev, h));
+    }
+  }, [
+    introVisible,
+    locale,
+    dictionary,
+    welcomeTypingComplete,
+    paragraphHeightsReady,
+    introParagraphHeights,
+    revealKey,
+  ]);
 
   const handleIntroLocaleToggle = React.useCallback(() => {
     if (!languageReady) return;
@@ -455,141 +490,24 @@ export default function Home() {
   }, [openDesignGrid]);
 
   const renderIntro = React.useCallback(
-    (paragraphRaw: string, idx: number) => {
-      const mirrorDict = getMirrorDictionary(locale);
-      const mirrorRaw = mirrorDict.intro[idx] ?? "";
-      const { currentParts, mirrorParts } = prepareIntroParagraphDual(
-        paragraphRaw,
-        mirrorRaw,
-      );
-
-      return (
-        <>
-          {(() => {
-            const out: React.ReactNode[] = [];
-            for (let i = 0; i < currentParts.length; i += 1) {
-              const part = currentParts[i] ?? "";
-              const crossfadeFrom = shouldScrambleOnThisRender
-                ? segmentResolvedText(mirrorParts[i] ?? "", mirrorDict)
-                : undefined;
-
-              if (part === "{UPM}") {
-                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
-                out.push(
-                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
-                    <IntroExternalLink
-                      slotId="upm"
-                      href="https://www.mackenzie.br/"
-                      label={dictionary.upmLabel}
-                      crossfadeFrom={crossfadeFrom}
-                      play={shouldScrambleOnThisRender}
-                      startDelayMs={introPartDelay(idx, i)}
-                    />
-                    {punct}
-                  </span>,
-                );
-                continue;
-              }
-
-              if (part === "{SME}") {
-                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
-                out.push(
-                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
-                    <IntroExternalLink
-                      slotId="sme"
-                      href="https://sistemasdeensino.mackenzie.br/"
-                      label="SME"
-                      crossfadeFrom={crossfadeFrom}
-                      play={shouldScrambleOnThisRender}
-                      startDelayMs={introPartDelay(idx, i)}
-                    />
-                    {punct}
-                  </span>,
-                );
-                continue;
-              }
-
-              if (part === "{PAPELZINHO}") {
-                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
-                out.push(
-                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
-                    <IntroExternalLink
-                      slotId="papelzinho"
-                      href="https://papelzinho.com/"
-                      label={dictionary.papelzinhoLabel}
-                      crossfadeFrom={crossfadeFrom}
-                      play={shouldScrambleOnThisRender}
-                      startDelayMs={introPartDelay(idx, i)}
-                    />
-                    {punct}
-                  </span>,
-                );
-                continue;
-              }
-
-              if (part === "{ORLA}") {
-                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
-                out.push(
-                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
-                    <IntroExternalLink
-                      slotId="orla"
-                      href="https://www.orla.tech/"
-                      label={dictionary.orlaLabel}
-                      crossfadeFrom={crossfadeFrom}
-                      play={shouldScrambleOnThisRender}
-                      startDelayMs={introPartDelay(idx, i)}
-                    />
-                    {punct}
-                  </span>,
-                );
-                continue;
-              }
-
-              if (part === "{ADA}") {
-                const punct = trailingPunctAfterPlaceholder(paragraphRaw, i);
-                out.push(
-                  <span key={`intro-inline-${idx}-${i}`} className="inline-block align-baseline">
-                    <IntroExternalLink
-                      slotId="ada"
-                      href="https://developer.apple.com/academies/"
-                      label={dictionary.appleDeveloperAcademyLabel}
-                      crossfadeFrom={crossfadeFrom}
-                      play={shouldScrambleOnThisRender}
-                      startDelayMs={introPartDelay(idx, i)}
-                    />
-                    {punct}
-                  </span>,
-                );
-                continue;
-              }
-
-              if (!part) continue;
-
-              out.push(
-                <AnimeScrambleText
-                  key={`intro-seg-${idx}-${i}`}
-                  mode="phrase"
-                  text={part}
-                  fromText={crossfadeFrom}
-                  play={shouldScrambleOnThisRender}
-                  startDelayMs={introPartDelay(idx, i)}
-                  revealRate={INTRO_SCRAMBLE.revealRate}
-                  settleDuration={INTRO_SCRAMBLE.settleDuration}
-                  settleRate={INTRO_SCRAMBLE.settleRate}
-                  scrambleEase={INTRO_SCRAMBLE.scrambleEase}
-                  scrambleOverride={INTRO_SCRAMBLE.scrambleOverride}
-                  chars={INTRO_SCRAMBLE.chars}
-                  from={INTRO_SCRAMBLE.from}
-                  className={INTRO_SCRAMBLE_SEGMENT_CLASS}
-                />,
-              );
-            }
-            return out;
-          })()}
-        </>
-      );
-    },
-    [dictionary, locale, shouldScrambleOnThisRender],
+    (paragraphRaw: string, idx: number) => (
+      <IntroParagraphLocaleWave
+        paragraphRaw={paragraphRaw}
+        paragraphIndex={idx}
+        dictionary={dictionary}
+        mirrorDict={getMirrorDictionary(locale)}
+        shouldScramble={shouldScrambleOnThisRender}
+        revealKey={revealKey}
+        prefersReducedMotion={prefersReducedMotion}
+      />
+    ),
+    [
+      dictionary,
+      locale,
+      shouldScrambleOnThisRender,
+      revealKey,
+      prefersReducedMotion,
+    ],
   );
 
   const renderIntroStatic = React.useCallback((text: string, idx: number) => {
@@ -866,11 +784,15 @@ export default function Home() {
             )}
           >
             <div
+              ref={heroBodyRef}
               className={cn(
                 "flex w-full flex-col items-center",
                 introVisible ? "gap-6" : "gap-0",
                 projectsView ? "pointer-events-none" : "pointer-events-auto",
               )}
+              style={{
+                minHeight: heroBodyMinPx > 0 ? `${heroBodyMinPx}px` : undefined,
+              }}
             >
               <h1
                 aria-label={welcomeFull}
@@ -880,16 +802,28 @@ export default function Home() {
                   <span aria-hidden="true">{welcomeFull}</span>
                 ) : (
                   <TypeAnimation
-                    key={`welcome-typewriter-${locale}`}
-                    sequence={[welcomeFull]}
+                    key={`welcome-anim-${welcomeAnimCycle}`}
+                    sequence={
+                      welcomeLocalePair === null
+                        ? [frozenWelcomeForTypewriter ?? dictionary.welcome]
+                        : [
+                            welcomeLocalePair.from,
+                            420,
+                            welcomeLocalePair.to,
+                          ]
+                    }
                     wrapper="span"
                     speed={{
                       type: "keyStrokeDelayInMs",
                       value: TYPE_SPEED_INITIAL_MS,
                     }}
+                    deletionSpeed={{
+                      type: "keyStrokeDelayInMs",
+                      value: Math.max(35, TYPE_SPEED_INITIAL_MS - 25),
+                    }}
                     cursor
                     repeat={0}
-                    preRenderFirstString={false}
+                    preRenderFirstString={welcomeLocalePair !== null}
                     className="inline-block"
                     aria-hidden
                   />
@@ -929,11 +863,11 @@ export default function Home() {
                               introParagraphHeights[idx] != null
                                 ? `${introParagraphHeights[idx]}px`
                                 : undefined,
-                            contain: "layout paint",
                           }}
                         >
                           <p
-                            className="m-0 motion-reduce:transition-none"
+                            lang={locale === "pt" ? "pt-BR" : "en-US"}
+                            className="m-0 hyphens-manual text-pretty motion-reduce:transition-none [text-wrap:pretty] break-words"
                             style={{
                               opacity: introVisible ? 1 : 0,
                               transform:

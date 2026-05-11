@@ -1,41 +1,23 @@
 /**
- * Cadência curta e legível — revelação caractere-a-caractere da esquerda para
- * a direita em cada segmento; ordem global de cima para baixo via `introPartDelay`.
+ * Cadência do scramble editorial (Motion Primitives + onda).
  */
 
-/** Curvas `ease` aceites por `parseEase` do Anime.js — só dentro de `scrambleText()`. */
-export const INTRO_SCRAMBLE_EASE_PRESETS = {
-  linear: "linear",
-  inOutCubic: "inOut(3)",
-  outExpo: "outExpo",
+/** Parâmetros partilhados pelo intro e links inline (troca PT ↔ EN). */
+export const INTRO_EDITORIAL_SCRAMBLE = {
+  /** Duração base do segmento (s). */
+  duration: 0.28,
+  /** Extensão por carácter (s) — segmentos longos ganham ligeiramente mais parede. */
+  perCharPadSec: 0.012,
+  /** Curva editorial: suaviza o fim da onda (maior = mais suave). */
+  easeExponent: 2.35,
+  /** Onda minimalista: ponto e espaço (referência Motion Primitives). */
+  characterSet: ". ",
+  /** Largura da faixa de “pontos” que percorre o texto. */
+  waveWidth: 4,
 } as const;
 
-export const INTRO_SCRAMBLE = {
-  /** Mais alto = revelação mais rápida (~1000/revealRate ms por passo). */
-  revealRate: 88,
-  /** Tempo que cada carácter fica em scramble antes de assentar. */
-  settleDuration: 48,
-  /** Quantidade de ticks randômicos por caractere. */
-  settleRate: 2,
-  /**
-   * Curva da **progressão global** do reveal — passada a `scrambleText({ ease })`.
-   * O `animate()` exterior não define `ease` (evita double-easing).
-   * Alternativas: `INTRO_SCRAMBLE_EASE_PRESETS`.
-   */
-  scrambleEase: INTRO_SCRAMBLE_EASE_PRESETS.linear,
-  /**
-   * `false` = mantém o texto de origem até a onda de revelação chegar a cada
-   * posição (menos caos simultâneo). Igual à API `override` do Anime.js.
-   */
-  scrambleOverride: false,
-  /** Apenas letras — menos ruído que dígitos/símbolos. */
-  chars: "abcdefghijklmnopqrstuvwxyz",
-  from: "left" as const,
-};
-
 /**
- * Onda editorial entre **blocos** (parágrafos): ~80ms — overlap leve com o fim
- * do bloco anterior. Dentro do bloco, segmentos seguem em sequência fina.
+ * Legado: pequeno escalonamento editorial (não usado no scramble global).
  */
 export const INTRO_BLOCK_STAGGER_MS = 80;
 export const INTRO_PART_STAGGER_MS = 18;
