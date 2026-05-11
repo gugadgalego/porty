@@ -16,14 +16,25 @@ export const SITE_BOTTOM_NAV_CONTAINER_CLASS = cn(
 /** Cada célula da grelha: `min-w-0` evita que o conteúdo force larguras desiguais. */
 export const SITE_BOTTOM_NAV_ITEM_CLASS = "relative z-[1] min-w-0";
 
+/**
+ * Hover dos botões ghost da bottom nav — espelha `SITE_BOTTOM_NAV_HOVER_SURFACE_CLASS` na PullTab.
+ */
+export const SITE_BOTTOM_NAV_BUTTON_HOVER_CLASS =
+  "hover:bg-muted/50 dark:hover:bg-muted/50";
+
+/**
+ * Fundo da PullTab: mesma cor que o hover dos links da nav (`SITE_BOTTOM_NAV_BUTTON_HOVER_CLASS`).
+ */
+export const SITE_BOTTOM_NAV_HOVER_SURFACE_CLASS =
+  "bg-muted/50 dark:bg-muted/50";
+
 /** Hero + barra fixa + páginas com SiteBottomNav. `shrink` anula o `shrink-0` do `Button` para caber na célula. */
 export const SITE_BOTTOM_NAV_BUTTON_CLASS = cn(
   "relative z-[1] min-w-0 w-full shrink rounded-none font-mono text-[12px] tracking-wide",
   "px-3",
   /* Sem borda em nenhum estado (inclui overrides do `Button` e do `border-border` global em `*`). */
   "border-0 hover:border-0 focus-visible:border-0 active:border-0 aria-expanded:border-0 aria-invalid:border-0",
-  /* Ghost em light usa `hover:bg-muted` opaco — aqui fica mais suave e alinha com o highlight magnético. */
-  "hover:bg-muted/50 dark:hover:bg-muted/50",
+  SITE_BOTTOM_NAV_BUTTON_HOVER_CLASS,
 );
 
 export function SiteBottomNav({ className }: { className?: string }) {

@@ -22,6 +22,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { animate, motion, useMotionValue } from "motion/react";
 
 /**
  * Pull tab flutuante inspirado no PiP do iOS.
@@ -37,7 +38,8 @@ import {
  *  - Flick (velocidade)   → arremessa para o canto na direção do movimento
  *                           (mesmo de longe) e colapsa com bounce.
  *
- * As transições usam easeOutBack para dar um leve overshoot ("gooey" / bounce).
+ * Arrasto além da viewport: overscroll em Motion Values (`x`/`y`) com
+ * `animate()` para voltar a zero em spring ao soltar — feeling próximo ao UIKit.
  */
 
 type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
@@ -83,7 +85,6 @@ const DRAG_THRESHOLD_PX = 9;
 const FLICK_MIN_SPEED_PX_MS = 0.6;
 const FLICK_SAMPLE_WINDOW_MS = 100;
 const FLICK_PROJECTION_MS = 320;
-const RUBBER_BAND_RESISTANCE = 0.26;
 const DRAG_STRETCH_MAX = 0.145;
 const DRAG_ROTATE_MAX_DEG = 8;
 const DRAG_VELOCITY_FOR_MAX_STRETCH = 1.8;
@@ -93,23 +94,92 @@ const SHAKE_TRIGGER_FLIPS = 3;
 const SHAKE_DECAY_MS = 220;
 const SHAKE_STRETCH_BOOST = 0.055;
 const SHAKE_ROTATE_BOOST_DEG = 3.2;
+/** Arrasto para fora da borda: resistência + limite (px) antes do spring de volta. */
+const OVERSCROLL_RESISTANCE = 0.38;
+const OVERSCROLL_CAP = 76;
+
+/** Spring só no overscroll — soltar “cospe” de volta à borda com leve inércia. */
+const SPRING_OVERFLOW_RELEASE = {
+  type: "spring" as const,
+  stiffness: 440,
+  damping: 34,
+  mass: 0.76,
+};
 const DROP_OVERSHOOT_MS = 90;
 const DROP_MIN_SPEED_PX_MS = 0.08;
 
 /** Ancoragem do ponteiro sobre o handle de drag quando o modo expande mid-drag. */
 const EXPANDED_DRAG_ANCHOR = { x: 16, y: 16 };
 
-/** Bounce: easeOutBack — dá overshoot. */
-const SPRING_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
-/** Ease mais contida para border-radius e pequenas transições. */
-const SMOOTH_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
-const SNAP_MS = 300;
-const SIZE_MS = 220;
-const RADIUS_MS = 170;
-const TAP_OPEN_SNAP_MS = 170;
-const TAP_OPEN_SIZE_MS = 130;
-const TAP_OPEN_RADIUS_MS = 120;
+/** Cantos da pull-tab — zero raio (retângulo rente à borda). */
+const CORNER_RADIUS_PX = 0;
+
+/** Springs estilo UIKit — stiff + damping moderado, leve “carrying momentum”. */
+const SPRING_SNAP = {
+  type: "spring" as const,
+  stiffness: 520,
+  damping: 36,
+  mass: 0.88,
+};
+const SPRING_SNAP_QUICK = {
+  type: "spring" as const,
+  stiffness: 680,
+  damping: 40,
+  mass: 0.78,
+};
+const SPRING_SIZE = {
+  type: "spring" as const,
+  stiffness: 410,
+  damping: 32,
+  mass: 0.92,
+};
+const SPRING_SIZE_QUICK = {
+  type: "spring" as const,
+  stiffness: 520,
+  damping: 36,
+  mass: 0.82,
+};
+const SPRING_RADIUS = {
+  type: "spring" as const,
+  stiffness: 360,
+  damping: 34,
+  mass: 0.95,
+};
+const SPRING_RADIUS_QUICK = {
+  type: "spring" as const,
+  stiffness: 460,
+  damping: 36,
+  mass: 0.88,
+};
+/** Entrada (opacity + escala global) e settle após largar o stretch do drag. */
+const SPRING_ENTRANCE = {
+  type: "spring" as const,
+  stiffness: 320,
+  damping: 22,
+  mass: 1,
+};
+const SPRING_RELEASE_ROTATE = {
+  type: "spring" as const,
+  stiffness: 580,
+  damping: 42,
+  mass: 0.82,
+};
+
+const TRANSITION_INSTANT = { duration: 0 };
+
 const PULLTAB_TOOLTIP_DELAY_MS = 650;
+
+function subscribePullTabReducedMotion(onStoreChange: () => void) {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  mq.addEventListener("change", onStoreChange);
+  return () => mq.removeEventListener("change", onStoreChange);
+}
+
+function getPullTabReducedMotionSnapshot() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
 
 const CORNERS: readonly Corner[] = [
   "top-left",
@@ -194,10 +264,12 @@ function clampInViewport(
   };
 }
 
-function rubberBand(value: number, min: number, max: number, resistance: number) {
-  if (value < min) return min + (value - min) * resistance;
-  if (value > max) return max + (value - max) * resistance;
-  return value;
+/** Deslocamento visível além da borda (dedo segue com resistência; Motion faz o snap). */
+function dampOverscroll(delta: number): number {
+  if (delta === 0) return 0;
+  const sign = Math.sign(delta);
+  const resisted = Math.abs(delta) * OVERSCROLL_RESISTANCE;
+  return sign * Math.min(OVERSCROLL_CAP, resisted);
 }
 
 type DragVisual = {
@@ -232,10 +304,50 @@ export function PullTab() {
     isChromeReady,
     () => false,
   );
+  const prefersReducedMotion = React.useSyncExternalStore(
+    subscribePullTabReducedMotion,
+    getPullTabReducedMotionSnapshot,
+    () => false,
+  );
   /** Incrementa a cada troca de modo para re-disparar a animação de squish. */
   const [pulseKey, setPulseKey] = React.useState(0);
   /** Nó raiz fixo da pull-tab (não desmonta), usado para pointer-capture estável. */
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+
+  /** Overscroll em translate — posição `left`/`top` fica sempre clampada ao viewport. */
+  const overflowX = useMotionValue(0);
+  const overflowY = useMotionValue(0);
+  const overflowAnimRef = React.useRef<{ stop: () => void } | null>(null);
+
+  const stopOverflowAnim = React.useCallback(() => {
+    overflowAnimRef.current?.stop();
+    overflowAnimRef.current = null;
+  }, []);
+
+  const resetOverflow = React.useCallback(() => {
+    stopOverflowAnim();
+    overflowX.set(0);
+    overflowY.set(0);
+  }, [overflowX, overflowY, stopOverflowAnim]);
+
+  const settleOverflowSpring = React.useCallback(() => {
+    stopOverflowAnim();
+    if (prefersReducedMotion) {
+      overflowX.set(0);
+      overflowY.set(0);
+      return;
+    }
+    const ax = animate(overflowX, 0, SPRING_OVERFLOW_RELEASE);
+    const ay = animate(overflowY, 0, SPRING_OVERFLOW_RELEASE);
+    overflowAnimRef.current = {
+      stop: () => {
+        ax.stop();
+        ay.stop();
+      },
+    };
+  }, [prefersReducedMotion, overflowX, overflowY, stopOverflowAnim]);
+
+  React.useEffect(() => () => stopOverflowAnim(), [stopOverflowAnim]);
 
   const modeRef = React.useRef(mode);
   const cornerRef = React.useRef(corner);
@@ -386,6 +498,7 @@ export function PullTab() {
     onTap?: () => void,
   ) => {
     if (!pos) return;
+    resetOverflow();
     setDragVisual(IDLE_DRAG_VISUAL);
     const captureTarget = rootRef.current ?? e.currentTarget;
     try {
@@ -478,6 +591,7 @@ export function PullTab() {
       if (!snapping) setSnapping(true);
       cornerRef.current = hit;
       setCorner(hit);
+      resetOverflow();
       setPos(collapsedCornerPos(hit, vw, vh));
       setDragVisual(IDLE_DRAG_VISUAL);
       return;
@@ -488,18 +602,14 @@ export function PullTab() {
     const rawY = e.clientY - info.grabY;
     const maxX = Math.max(0, vw - EXPANDED_W);
     const maxY = Math.max(0, vh - EXPANDED_H);
-    const visualX = rubberBand(rawX, 0, maxX, RUBBER_BAND_RESISTANCE);
-    const visualY = rubberBand(rawY, 0, maxY, RUBBER_BAND_RESISTANCE);
-    const clamped = clampInViewport(
-      rawX,
-      rawY,
-      EXPANDED_W,
-      EXPANDED_H,
-      vw,
-      vh,
+    const clampedX = Math.min(Math.max(rawX, 0), maxX);
+    const clampedY = Math.min(Math.max(rawY, 0), maxY);
+    overflowX.set(dampOverscroll(rawX - clampedX));
+    overflowY.set(dampOverscroll(rawY - clampedY));
+    setPos({ x: clampedX, y: clampedY });
+    setFloatPos(
+      clampInViewport(clampedX, clampedY, EXPANDED_W, EXPANDED_H, vw, vh),
     );
-    setPos({ x: visualX, y: visualY });
-    setFloatPos(clamped);
 
     const speed = Math.hypot(instVx, instVy);
     const norm = Math.min(speed / DRAG_VELOCITY_FOR_MAX_STRETCH, 1);
@@ -625,6 +735,9 @@ export function PullTab() {
     setDragging(false);
     setSnapping(false);
     setDragVisual(IDLE_DRAG_VISUAL);
+    if (info.moved) {
+      settleOverflowSpring();
+    }
     if (dropKick && dropSettle) {
       requestAnimationFrame(() => {
         setPos(dropSettle);
@@ -648,6 +761,7 @@ export function PullTab() {
     setDragging(false);
     setSnapping(false);
     setDragVisual(IDLE_DRAG_VISUAL);
+    resetOverflow();
     syncToRest();
   };
 
@@ -658,6 +772,7 @@ export function PullTab() {
     setDragging(false);
     setSnapping(false);
     setDragVisual(IDLE_DRAG_VISUAL);
+    resetOverflow();
     syncToRest();
   };
 
@@ -710,40 +825,93 @@ export function PullTab() {
    * Transição ligada sempre que:
    *  - não está arrastando (repouso / animação final), ou
    *  - está arrastando mas dentro de uma hitbox (snap magnético).
-   * Enquanto arrasta em modo livre, NÃO transiciona — barra segue o ponteiro.
-   *
-   * `opacity` e `transform` ficam sempre com transição (usados pela entrada
-   * dramática) — drag não altera eles, então não atrapalha.
+   * Em arraste livre, layout segue o ponteiro sem spring; opacidade/entrada
+   * continuam com física suave quando aplicável.
    */
   const transitionOn = !dragging || snapping;
-  const snapMs = quickOpen ? TAP_OPEN_SNAP_MS : SNAP_MS;
-  const sizeMs = quickOpen ? TAP_OPEN_SIZE_MS : SIZE_MS;
-  const radiusMs = quickOpen ? TAP_OPEN_RADIUS_MS : RADIUS_MS;
-  const entranceTransition = [
-    `opacity 320ms ${SMOOTH_EASE}`,
-    ...(!dragging ? [`transform 420ms ${SPRING_EASE}`] : []),
-  ];
-  const transitionStr = transitionOn
-    ? [
-        `left ${snapMs}ms ${SPRING_EASE}`,
-        `top ${snapMs}ms ${SPRING_EASE}`,
-        `width ${sizeMs}ms ${SPRING_EASE}`,
-        `height ${sizeMs}ms ${SPRING_EASE}`,
-        `border-radius ${radiusMs}ms ${SMOOTH_EASE}`,
-        ...entranceTransition,
-      ].join(", ")
-    : entranceTransition.join(", ");
+  const snapSpring = quickOpen ? SPRING_SNAP_QUICK : SPRING_SNAP;
+  const sizeSpring = quickOpen ? SPRING_SIZE_QUICK : SPRING_SIZE;
+  const radiusSpring = quickOpen ? SPRING_RADIUS_QUICK : SPRING_RADIUS;
+
+  const transition = prefersReducedMotion
+    ? {
+        left: TRANSITION_INSTANT,
+        top: TRANSITION_INSTANT,
+        width: TRANSITION_INSTANT,
+        height: TRANSITION_INSTANT,
+        borderTopLeftRadius: TRANSITION_INSTANT,
+        borderTopRightRadius: TRANSITION_INSTANT,
+        borderBottomLeftRadius: TRANSITION_INSTANT,
+        borderBottomRightRadius: TRANSITION_INSTANT,
+        opacity: TRANSITION_INSTANT,
+        scaleX: TRANSITION_INSTANT,
+        scaleY: TRANSITION_INSTANT,
+        rotate: TRANSITION_INSTANT,
+      }
+    : {
+        opacity: SPRING_ENTRANCE,
+        scaleX: dragging ? TRANSITION_INSTANT : SPRING_ENTRANCE,
+        scaleY: dragging ? TRANSITION_INSTANT : SPRING_ENTRANCE,
+        rotate: dragging ? TRANSITION_INSTANT : SPRING_RELEASE_ROTATE,
+        left: transitionOn ? snapSpring : TRANSITION_INSTANT,
+        top: transitionOn ? snapSpring : TRANSITION_INSTANT,
+        width: transitionOn ? sizeSpring : TRANSITION_INSTANT,
+        height: transitionOn ? sizeSpring : TRANSITION_INSTANT,
+        borderTopLeftRadius: transitionOn ? radiusSpring : TRANSITION_INSTANT,
+        borderTopRightRadius: transitionOn ? radiusSpring : TRANSITION_INSTANT,
+        borderBottomLeftRadius: transitionOn ? radiusSpring : TRANSITION_INSTANT,
+        borderBottomRightRadius: transitionOn ? radiusSpring : TRANSITION_INSTANT,
+      };
 
   /** Origem do transform: cola à borda docada quando colapsado — parece "crescer da parede". */
   const transformOrigin = isExpanded
     ? "center center"
     : edge === "right"
-    ? "100% 50%"
-    : "0% 50%";
+      ? "100% 50%"
+      : "0% 50%";
   const revealScale = revealed ? 1 : 0.25;
   const visualScaleX = dragging ? dragVisual.scaleX : 1;
   const visualScaleY = dragging ? dragVisual.scaleY : 1;
   const visualRotate = dragging ? dragVisual.rotateDeg : 0;
+
+  const cornerRadii = isExpanded
+    ? {
+        tl: CORNER_RADIUS_PX,
+        tr: CORNER_RADIUS_PX,
+        bl: CORNER_RADIUS_PX,
+        br: CORNER_RADIUS_PX,
+      }
+    : edge === "right"
+      ? {
+          tl: CORNER_RADIUS_PX,
+          tr: 0,
+          bl: CORNER_RADIUS_PX,
+          br: 0,
+        }
+      : {
+          tl: 0,
+          tr: CORNER_RADIUS_PX,
+          bl: 0,
+          br: CORNER_RADIUS_PX,
+        };
+
+  const squishTransition = prefersReducedMotion
+    ? TRANSITION_INSTANT
+    : {
+        duration: 0.32,
+        times: [0, 0.28, 0.58, 1],
+        ease: [
+          [0.2, 0.95, 0.25, 1.4],
+          [0.2, 0.95, 0.25, 1.4],
+          [0.22, 1, 0.36, 1],
+          [0.34, 1.56, 0.64, 1],
+        ] as [
+          [number, number, number, number],
+          [number, number, number, number],
+          [number, number, number, number],
+          [number, number, number, number],
+        ],
+      };
 
   const collapsedLabel =
     locale === "pt" ? "Abrir controles" : "Open controls";
@@ -761,9 +929,25 @@ export function PullTab() {
   const cvLabel = locale === "pt" ? "Baixar CV" : "Download CV";
 
   return (
-    <div
+    <motion.div
       ref={rootRef}
       role="group"
+      initial={false}
+      animate={{
+        left: pos.x,
+        top: pos.y,
+        width: isExpanded ? EXPANDED_W : COLLAPSED_W,
+        height: isExpanded ? EXPANDED_H : COLLAPSED_H,
+        borderTopLeftRadius: cornerRadii.tl,
+        borderTopRightRadius: cornerRadii.tr,
+        borderBottomLeftRadius: cornerRadii.bl,
+        borderBottomRightRadius: cornerRadii.br,
+        opacity: revealed ? 1 : 0,
+        scaleX: revealScale * visualScaleX,
+        scaleY: revealScale * visualScaleY,
+        rotate: visualRotate,
+      }}
+      transition={transition}
       aria-hidden={!revealed}
       aria-label={
         locale === "pt" ? "Atalhos do portfólio" : "Portfolio shortcuts"
@@ -774,39 +958,39 @@ export function PullTab() {
       onLostPointerCapture={handleLostPointerCapture}
       style={{
         position: "fixed",
-        left: pos.x,
-        top: pos.y,
         zIndex: 60,
-        width: isExpanded ? EXPANDED_W : COLLAPSED_W,
-        height: isExpanded ? EXPANDED_H : COLLAPSED_H,
-        opacity: revealed ? 1 : 0,
-        transform: `scale(${revealScale}) scaleX(${visualScaleX}) scaleY(${visualScaleY}) rotate(${visualRotate}deg)`,
         transformOrigin,
+        x: overflowX,
+        y: overflowY,
         pointerEvents: revealed ? undefined : "none",
-        transition: transitionStr,
         touchAction: "none",
       }}
       className={cn(
         "relative flex select-none items-center justify-center overflow-hidden bg-foreground text-background shadow-lg shadow-foreground/20 ring-1 ring-background/10",
-        isExpanded
-          ? "rounded-[4px]"
-          : edge === "right"
-          ? "rounded-l-[4px]"
-          : "rounded-r-[4px]",
         dragging ? "cursor-grabbing" : "",
       )}
     >
-      {/* Camada de "squish" que pulsa a cada troca de modo — dá o toque gooey.
-       * Usa a cor de background (inverso do bar) com opacidade baixa: fica
-       * claro no tema claro (bar preta) e escuro no tema escuro (bar clara). */}
-      <span
+      {/* Squash visual na troca de modo — keyframes com easing tipo UIKit. */}
+      <motion.span
         key={pulseKey}
         aria-hidden
-        className="pointer-events-none absolute inset-0 rounded-[inherit] animate-pulltab-squish"
+        className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
         style={{
           background:
             "radial-gradient(120% 120% at 50% 50%, color-mix(in oklab, var(--background) 16%, transparent), transparent 60%)",
+          transformOrigin: "center center",
         }}
+        initial={false}
+        animate={
+          prefersReducedMotion
+            ? { opacity: 0, scaleX: 1, scaleY: 1 }
+            : {
+                opacity: [0, 1, 0.42, 0],
+                scaleX: [0.72, 1.18, 0.94, 1],
+                scaleY: [1.22, 0.86, 1.06, 1],
+              }
+        }
+        transition={squishTransition}
       />
       {isExpanded ? (
         <TooltipProvider delayDuration={PULLTAB_TOOLTIP_DELAY_MS}>
@@ -893,7 +1077,7 @@ export function PullTab() {
           )}
         </TabSlot>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -903,14 +1087,7 @@ type TabSlotProps = React.ComponentProps<typeof Button> & {
 };
 
 /**
- * Slot de botão da pull-tab — encaminha para o `Button` shadcn com a variante
- * `inverse-ghost`, que é o par correto quando o botão vive sobre uma
- * superfície `bg-foreground` (hover vira `bg-background/10`, ring foca em
- * `background`, textos herdados do container).
- *
- * Quando marcado como `draggable` (handle de drag), cursor vira grab/grabbing
- * e removemos o hover de fundo + o `active:translate-y-px` do Button para
- * evitar jitter de 1px durante o arraste.
+ * Slot sobre `bg-foreground` — `inverse-ghost` alinha hover/foco ao texto de fundo.
  */
 function TabSlot({
   className,

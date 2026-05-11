@@ -116,10 +116,17 @@ export default function Home() {
   const [frozenWelcomeForTypewriter, setFrozenWelcomeForTypewriter] =
     React.useState<string | null>(null);
 
+  /**
+   * Mantém o typewriter alinhado ao locale até terminar a digitação inicial.
+   * Antes congelávamos só no primeiro tick — se `dictionary` ainda fosse PT e
+   * depois passasse a EN (ex.: reload com `localStorage` em inglês), ficava
+   * "Bem-vindo" com o intro já em EN.
+   */
   React.useEffect(() => {
-    if (!languageReady || frozenWelcomeForTypewriter !== null) return;
+    if (!languageReady) return;
+    if (welcomeTypingComplete) return;
     setFrozenWelcomeForTypewriter(dictionary.welcome);
-  }, [languageReady, dictionary.welcome, frozenWelcomeForTypewriter]);
+  }, [languageReady, dictionary.welcome, welcomeTypingComplete]);
 
   React.useEffect(() => {
     if (!languageReady) return;
@@ -802,7 +809,11 @@ export default function Home() {
                   <span aria-hidden="true">{welcomeFull}</span>
                 ) : (
                   <TypeAnimation
-                    key={`welcome-anim-${welcomeAnimCycle}`}
+                    key={
+                      welcomeLocalePair === null
+                        ? `welcome-init-${frozenWelcomeForTypewriter ?? dictionary.welcome}`
+                        : `welcome-cross-${welcomeAnimCycle}`
+                    }
                     sequence={
                       welcomeLocalePair === null
                         ? [frozenWelcomeForTypewriter ?? dictionary.welcome]
