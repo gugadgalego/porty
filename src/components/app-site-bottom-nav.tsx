@@ -38,6 +38,8 @@ type Anim = "rest" | "in" | "out";
  * Barra inferior fixa em `/sobre` e `/design/*`.
  * Reutiliza a mesma coreografia da home ao abrir Design: saída estilo **hero** (fade + micro Y + blur,
  * stagger direita→esquerda) e entrada estilo **nav inferior** (slide X da esquerda, stagger esquerda→direita).
+ * A entrada em cascata corre **só** quando a barra monta; depois disso, trocas entre `/sobre` e `/design/*`
+ * mantêm os botões estáticos (sem re-disparar stagger).
  */
 export function AppSiteBottomNav() {
   const pathname = usePathname();
@@ -50,8 +52,8 @@ export function AppSiteBottomNav() {
   const [inArmed, setInArmed] = React.useState(false);
 
   const timersRef = React.useRef<number[]>([]);
-  const prevPathRef = React.useRef<string | null>(null);
   const reducedRef = React.useRef(false);
+  const prevPathnameRef = React.useRef<string | null>(null);
 
   const sections = React.useMemo(
     () => [
@@ -132,7 +134,7 @@ export function AppSiteBottomNav() {
   React.useEffect(() => {
     if (!chromeOk) return;
 
-    const prev = prevPathRef.current;
+    const prev = prevPathnameRef.current;
 
     if (!want) {
       if (mounted) {
@@ -152,13 +154,18 @@ export function AppSiteBottomNav() {
         setInArmed(true);
         runEnter();
       }
-    } else if (prev !== null && prev !== pathname) {
-      runExitThen(() => {
-        runEnter();
-      });
+    } else if (
+      mounted &&
+      want &&
+      prev !== null &&
+      prev !== pathname
+    ) {
+      clearTimers();
+      setAnim("rest");
+      setInArmed(true);
     }
 
-    prevPathRef.current = pathname;
+    prevPathnameRef.current = pathname;
   }, [pathname, want, mounted, chromeOk, runEnter, runExitThen]);
 
   if (!mounted) return null;
@@ -206,7 +213,7 @@ export function AppSiteBottomNav() {
               delayMs = idx * SITE_BOTTOM_NAV_STAGGER_MS;
             }
           } else {
-            transition = `opacity ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}, transform ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}`;
+            transition = "none";
             filter = "blur(0)";
           }
 
