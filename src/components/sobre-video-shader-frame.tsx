@@ -20,13 +20,93 @@ const VIDEO_SRC = "/videos/sobre-dijon.mp4";
 
 const VIDEO_MEDIA_STORAGE_KEY = "porty:sobre:sobre-dijon:mediaTime";
 
-function collectSobreDijonVideos(): HTMLVideoElement[] {
-  if (typeof document === "undefined") return [];
-  return [...document.querySelectorAll("video")].filter(
-    (v) =>
-      v.src.includes("sobre-dijon") ||
-      (v.currentSrc.length > 0 && v.currentSrc.includes("sobre-dijon")),
+/** Marca o `<video>` de áudio controlado por React. */
+const ATTR_PORTY_SOBRE_AUDIO = "data-porty-sobre-audio";
+
+/**
+ * O `VideoTexture` do pacote `shaders` cria um `<video>` em memória **fora** do DOM — não dá para
+ * alinhar `currentTime` ao áudio. Anexamos esses elementos a um contentor oculto (patch temporário
+ * de `document.createElement`) só enquanto este componente está montado.
+ */
+const ATTR_PORTY_SHADER_INTERNAL_VIDEO = "data-porty-shaders-internal-video";
+
+/** Contentor onde o patch anexa os `<video>` criados por `document.createElement` (escopo para não apanhar outros vídeos da página). */
+const ATTR_PORTY_PROBE_HOST = "data-porty-sobre-shader-probe-host";
+
+/** Áudio segue o relógio da textura (imagem no canvas); após F5 o áudio pode restaurar primeiro. */
+const AV_SYNC_DRIFT_SEC = 0.1;
+const AV_SYNC_INTERVAL_MS = 120;
+
+function installPortyShaderVideoProbe(host: HTMLElement): () => void {
+  const orig = document.createElement.bind(document);
+  const patched = (tagName: string, options?: unknown) => {
+    const el = orig(tagName, options as never);
+    if (String(tagName).toLowerCase() === "video") {
+      try {
+        (el as HTMLVideoElement).setAttribute(ATTR_PORTY_SHADER_INTERNAL_VIDEO, "");
+        host.appendChild(el as Node);
+      } catch {
+        /* ignore */
+      }
+    }
+    return el;
+  };
+  document.createElement = patched as typeof document.createElement;
+  return () => {
+    document.createElement = orig;
+  };
+}
+
+function getPortyAudioVideo(): HTMLVideoElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector<HTMLVideoElement>(
+    `video[${ATTR_PORTY_SOBRE_AUDIO}]`,
   );
+}
+
+function getProbeHost(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  return document.querySelector(`[${ATTR_PORTY_PROBE_HOST}]`);
+}
+
+/**
+ * O core do `VideoTexture` cria **dois** `<video>`: um placeholder e o da `loadVideo` (ver
+ * `VideoTexture-D9XxE1Hw.js`). Ambos são capturados pelo patch — o ativo é o **último** no host.
+ */
+function listShaderInternalVideos(): HTMLVideoElement[] {
+  const host = getProbeHost();
+  if (!host) return [];
+  return Array.from(
+    host.querySelectorAll<HTMLVideoElement>(
+      `video[${ATTR_PORTY_SHADER_INTERNAL_VIDEO}]`,
+    ),
+  );
+}
+
+function getShaderInternalVideo(): HTMLVideoElement | null {
+  const xs = listShaderInternalVideos();
+  return xs.at(-1) ?? null;
+}
+
+function collectSobreDijonVideos(): HTMLVideoElement[] {
+  const a = getPortyAudioVideo();
+  const xs = listShaderInternalVideos();
+  if (a) return [a, ...xs];
+  return xs;
+}
+
+/** Relógio de mídia fiável: o `<video>` interno do shader por vezes volta a `currentTime === 0` após pausa. */
+function maxPresentationMediaTime(
+  audio: HTMLVideoElement | null,
+  texture: HTMLVideoElement | null,
+  fallback: number,
+): number {
+  const a = audio?.currentTime;
+  const b = texture?.currentTime;
+  const na = Number.isFinite(a) ? (a as number) : 0;
+  const nb = Number.isFinite(b) ? (b as number) : 0;
+  const fb = Number.isFinite(fallback) ? fallback : 0;
+  return Math.max(na, nb, fb);
 }
 
 function readStoredMediaTime(): number | null {
@@ -41,6 +121,55 @@ function writeStoredMediaTime(t: number) {
   if (typeof sessionStorage === "undefined") return;
   if (!Number.isFinite(t) || t < 0) return;
   sessionStorage.setItem(VIDEO_MEDIA_STORAGE_KEY, String(t));
+}
+
+function syncAudioAndShaderTextureVideo(audioEl: HTMLVideoElement | null) {
+  if (!audioEl) return;
+  const texture = getShaderInternalVideo();
+  if (!texture || texture === audioEl) return;
+  if (!Number.isFinite(texture.duration) || texture.duration <= 0) return;
+
+  const a = audioEl.currentTime;
+  const b = texture.currentTime;
+
+  if (a > 0.5 && b + 1 < a) {
+    try {
+      texture.currentTime = a;
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  if (texture.paused || audioEl.paused) return;
+  if (texture.readyState < 2) return;
+  if (Math.abs(a - b) <= AV_SYNC_DRIFT_SEC) return;
+  try {
+    audioEl.currentTime = b;
+  } catch {
+    /* ignore */
+  }
+}
+
+function applyStoredMediaTimeToVideos(primary: HTMLVideoElement | null) {
+  if (!primary) return;
+  const stored = readStoredMediaTime();
+  const t =
+    stored != null
+      ? Math.min(stored, primary.duration || stored)
+      : primary.currentTime;
+  if (stored != null && Number.isFinite(t)) {
+    primary.currentTime = t;
+    for (const v of collectSobreDijonVideos()) {
+      if (v !== primary)
+        try {
+          v.currentTime = t;
+        } catch {
+          /* ignore */
+        }
+    }
+    syncAudioAndShaderTextureVideo(primary);
+  }
 }
 
 /** Textura oculta para o mapa de `pixelSize` do CRT (substitui a 2.ª ImageTexture do preset). */
@@ -78,12 +207,30 @@ export function SobreVideoShaderFrame({
   presentationHidden = false,
 }: SobreVideoShaderFrameProps) {
   const audioVideoRef = useRef<HTMLVideoElement>(null);
+  const probeCleanupRef = useRef<(() => void) | null>(null);
   const wasPlayingBeforeHideRef = useRef(false);
+  /** Instantâneo ao sair do frame de vídeo — evita usar `currentTime` da textura a 0 após pausa. */
+  const presentationResumeTimeRef = useRef(0);
   const [muted, setMuted] = useState(false);
   const [frameHovered, setFrameHovered] = useState(false);
   const [muteFocused, setMuteFocused] = useState(false);
 
   const showMuteControl = frameHovered || muteFocused;
+
+  const connectProbeHost = useCallback((node: HTMLDivElement | null) => {
+    probeCleanupRef.current?.();
+    probeCleanupRef.current = null;
+    if (!node) return;
+    probeCleanupRef.current = installPortyShaderVideoProbe(node);
+  }, []);
+
+  useEffect(
+    () => () => {
+      probeCleanupRef.current?.();
+      probeCleanupRef.current = null;
+    },
+    [],
+  );
 
   const toggleMute = useCallback(() => {
     const el = audioVideoRef.current;
@@ -107,46 +254,33 @@ export function SobreVideoShaderFrame({
     });
   }, []);
 
-  const applyStoredOrSyncedTime = useCallback((master?: HTMLVideoElement) => {
-    const primary = master ?? audioVideoRef.current;
-    if (!primary) return;
-    const stored = readStoredMediaTime();
-    const t =
-      stored != null
-        ? Math.min(stored, primary.duration || stored)
-        : primary.currentTime;
-    if (stored != null && Number.isFinite(t)) {
-      primary.currentTime = t;
-      for (const v of collectSobreDijonVideos()) {
-        if (v !== primary)
-          try {
-            v.currentTime = t;
-          } catch {
-            /* ignore */
-          }
-      }
-    }
-  }, []);
-
   useEffect(() => {
     const el = audioVideoRef.current;
     if (!el) return;
 
+    const persistTime = () => {
+      const a = audioVideoRef.current;
+      const tt = getShaderInternalVideo();
+      writeStoredMediaTime(maxPresentationMediaTime(a, tt, 0));
+    };
+
     const onLoaded = () => {
-      applyStoredOrSyncedTime(el);
+      applyStoredMediaTimeToVideos(el);
+      requestAnimationFrame(() => syncAudioAndShaderTextureVideo(el));
+      window.setTimeout(() => syncAudioAndShaderTextureVideo(el), 320);
     };
     el.addEventListener("loadeddata", onLoaded);
     if (el.readyState >= 1) onLoaded();
 
-    const onPageHide = () => writeStoredMediaTime(el.currentTime);
+    const onPageHide = () => persistTime();
     window.addEventListener("pagehide", onPageHide);
 
     return () => {
       el.removeEventListener("loadeddata", onLoaded);
       window.removeEventListener("pagehide", onPageHide);
-      writeStoredMediaTime(el.currentTime);
+      persistTime();
     };
-  }, [applyStoredOrSyncedTime]);
+  }, []);
 
   useEffect(() => {
     const videos = collectSobreDijonVideos();
@@ -154,6 +288,13 @@ export function SobreVideoShaderFrame({
     if (presentationHidden) {
       if (primary && !primary.paused) wasPlayingBeforeHideRef.current = true;
       else if (primary) wasPlayingBeforeHideRef.current = false;
+
+      presentationResumeTimeRef.current = maxPresentationMediaTime(
+        primary,
+        getShaderInternalVideo(),
+        presentationResumeTimeRef.current,
+      );
+
       for (const v of videos) {
         try {
           void v.pause();
@@ -164,20 +305,52 @@ export function SobreVideoShaderFrame({
       return;
     }
 
-    const t = primary?.currentTime;
-    if (primary != null && t != null && Number.isFinite(t)) {
-      for (const v of videos) {
-        if (v !== primary)
-          try {
-            v.currentTime = t;
-          } catch {
-            /* ignore */
-          }
+    const texture = getShaderInternalVideo();
+    const seekRaw = maxPresentationMediaTime(
+      primary,
+      texture,
+      presentationResumeTimeRef.current,
+    );
+    const dur =
+      primary != null &&
+      Number.isFinite(primary.duration) &&
+      primary.duration > 0
+        ? primary.duration
+        : null;
+    const seekT = dur != null ? Math.min(seekRaw, dur) : seekRaw;
+    presentationResumeTimeRef.current = seekT;
+
+    for (const v of videos) {
+      const cap =
+        Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null;
+      const t = cap != null ? Math.min(seekT, cap) : seekT;
+      try {
+        v.currentTime = t;
+      } catch {
+        /* ignore */
       }
     }
+    syncAudioAndShaderTextureVideo(primary ?? null);
 
     if (!wasPlayingBeforeHideRef.current || !primary) return;
+
+    const tt = getShaderInternalVideo();
+    void tt?.play().catch(() => {});
     void primary.play().catch(() => {});
+
+    requestAnimationFrame(() => {
+      syncAudioAndShaderTextureVideo(primary);
+      window.setTimeout(() => syncAudioAndShaderTextureVideo(primary), 160);
+      window.setTimeout(() => syncAudioAndShaderTextureVideo(primary), 420);
+    });
+  }, [presentationHidden]);
+
+  useEffect(() => {
+    if (presentationHidden) return;
+    const tick = () => syncAudioAndShaderTextureVideo(audioVideoRef.current);
+    tick();
+    const id = window.setInterval(tick, AV_SYNC_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [presentationHidden]);
 
   return (
@@ -193,9 +366,9 @@ export function SobreVideoShaderFrame({
         style={{ backgroundImage: "url(/images/shader-frame-bg.png)" }}
       />
 
-      {/* Áudio: mesmo ficheiro que o `VideoTexture`; visual vem só do canvas. */}
       <video
         ref={audioVideoRef}
+        {...{ [ATTR_PORTY_SOBRE_AUDIO]: "" }}
         className="pointer-events-none absolute left-0 top-0 h-px w-px opacity-0"
         aria-hidden
         src={VIDEO_SRC}
@@ -203,6 +376,18 @@ export function SobreVideoShaderFrame({
         muted={muted}
         loop
         playsInline
+      />
+
+      {/*
+        O patch tem de estar ativo **antes** do `<Shader>` montar: o `VideoTexture` chama
+        `createElement("video")` no init (placeholder) e outra vez em `loadVideo` (setTimeout 0).
+        Depois do áudio: assim o nosso `<video>` não é capturado pelo patch.
+      */}
+      <div
+        ref={connectProbeHost}
+        {...{ [ATTR_PORTY_PROBE_HOST]: "" }}
+        className="pointer-events-none absolute left-0 top-0 -z-10 h-px w-px overflow-hidden opacity-0"
+        aria-hidden
       />
 
       <Shader
