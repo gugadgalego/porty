@@ -1,22 +1,35 @@
-"use client";
-
-import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useLanguage } from "@/components/providers/language-provider";
-import { Button } from "@/components/ui/button";
-import { MagneticNavUl } from "@/components/magnetic-nav-ul";
+
+/**
+ * Camada da barra inferior: acima do conteúdo rolável, PullTab (~60) e hero header (40),
+ * para ficar sempre visível no viewport sem scroll.
+ */
+export const SITE_BOTTOM_NAV_LAYER_CLASS = "z-[100]";
+
+/**
+ * Barra fixa no fundo do ecrã (`fixed bottom-0` no `<nav>`).
+ * Estilo alinhado ao botão “Project details” em vladsavruk.com: fundo na cor da página com
+ * opacidade (~70%), `backdrop-blur-sm` e contorno muito suave (sem faixa extra em cima).
+ */
+export const SITE_BOTTOM_NAV_FIXED_SHELL_CLASS = cn(
+  /* Sem `position` aqui — `fixed` vem no `<nav>`; `relative` anularia o `fixed` com `tailwind-merge`. */
+  "isolate",
+  "border-t border-x border-border/10",
+  "bg-background/70 backdrop-blur-sm",
+  "pb-[env(safe-area-inset-bottom,0px)]",
+);
 
 /** Mesmas classes da barra inferior da home (`renderNavButtons` scope bottom). */
 export const SITE_BOTTOM_NAV_CONTAINER_CLASS = cn(
   "grid w-full list-none grid-cols-4 items-stretch gap-3",
-  /* Padding uniforme compacto (p-2); sem fundo no contentor — hover nos botões e highlight magnético. */
+  /* Padding uniforme compacto (p-2); fundo fosco no `<nav>` fixo (`SITE_BOTTOM_NAV_FIXED_SHELL_CLASS`). */
   "p-2",
 );
 
 /** Cada célula da grelha: `min-w-0` evita que o conteúdo force larguras desiguais. */
 export const SITE_BOTTOM_NAV_ITEM_CLASS = "relative z-[1] min-w-0";
 
-/** Hero + barra fixa + páginas com SiteBottomNav. `shrink` anula o `shrink-0` do `Button` para caber na célula. */
+/** Hero + barra fixa + páginas com `AppSiteBottomNav`. `shrink` anula o `shrink-0` do `Button` para caber na célula. */
 export const SITE_BOTTOM_NAV_BUTTON_CLASS = cn(
   "relative z-[1] min-w-0 w-full shrink rounded-none font-mono text-[12px] tracking-wide",
   "px-3",
@@ -25,39 +38,3 @@ export const SITE_BOTTOM_NAV_BUTTON_CLASS = cn(
   /* Ghost em light usa `hover:bg-muted` opaco — aqui fica mais suave e alinha com o highlight magnético. */
   "hover:bg-muted/50 dark:hover:bg-muted/50",
 );
-
-export function SiteBottomNav({ className }: { className?: string }) {
-  const { dictionary, locale } = useLanguage();
-  const sections = [
-    { label: dictionary.sections.design, href: "/#design" },
-    { label: dictionary.sections.dev, href: "/#dev" },
-    { label: dictionary.sections.about, href: "/sobre" },
-    { label: dictionary.sections.cv, href: "/#cv" },
-  ];
-
-  return (
-    <nav
-      key={locale}
-      aria-label="Secções do site"
-      className={cn(
-        "fixed inset-x-0 bottom-0 z-30 pointer-events-auto",
-        className,
-      )}
-    >
-      <MagneticNavUl className={cn(SITE_BOTTOM_NAV_CONTAINER_CLASS)}>
-        {sections.map((s) => (
-          <li key={s.href} className={SITE_BOTTOM_NAV_ITEM_CLASS}>
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className={SITE_BOTTOM_NAV_BUTTON_CLASS}
-            >
-              <Link href={s.href}>{s.label}</Link>
-            </Button>
-          </li>
-        ))}
-      </MagneticNavUl>
-    </nav>
-  );
-}

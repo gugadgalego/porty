@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import "remixicon/fonts/remixicon.css";
 import { SobrePageClient } from "@/components/sobre-page-client";
 
 export const metadata: Metadata = {
