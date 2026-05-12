@@ -214,6 +214,10 @@ export type SobreVideoShaderFrameProps = {
   loop?: boolean;
   /** Chamado quando o clip termina (só relevante com `loop={false}`). */
   onClipEnded?: () => void;
+  /**
+   * Quando o frame está oculto (ex. outro slide ativo): pausa e liberta CPU; o nó mantém-se montado.
+   */
+  presentationHidden?: boolean;
 };
 
 export function SobreVideoShaderFrame({
@@ -222,6 +226,7 @@ export function SobreVideoShaderFrame({
   volumeAttenuation = 0,
   loop = true,
   onClipEnded,
+  presentationHidden = false,
 }: SobreVideoShaderFrameProps) {
   const audioVideoRef = useRef<HTMLVideoElement>(null);
   const probeCleanupRef = useRef<(() => void) | null>(null);
@@ -230,6 +235,9 @@ export function SobreVideoShaderFrame({
   onMediaReadyRef.current = onMediaReady;
   const onClipEndedRef = useRef(onClipEnded);
   onClipEndedRef.current = onClipEnded;
+  const wasPlayingBeforeHideRef = useRef(false);
+  /** Instantâneo ao ocultar o frame — evita usar `currentTime` da textura a 0 após pausa. */
+  const presentationResumeTimeRef = useRef(0);
   const [muted, setMuted] = useState(false);
   const [frameHovered, setFrameHovered] = useState(false);
   const [muteFocused, setMuteFocused] = useState(false);
@@ -329,11 +337,75 @@ export function SobreVideoShaderFrame({
   }, [videoSrc]);
 
   useEffect(() => {
+    const videos = collectSobreDijonVideos();
+    const primary = audioVideoRef.current;
+    if (presentationHidden) {
+      if (primary && !primary.paused) wasPlayingBeforeHideRef.current = true;
+      else if (primary) wasPlayingBeforeHideRef.current = false;
+
+      presentationResumeTimeRef.current = maxPresentationMediaTime(
+        primary,
+        getShaderInternalVideo(),
+        presentationResumeTimeRef.current,
+      );
+
+      for (const v of videos) {
+        try {
+          void v.pause();
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
+
+    const texture = getShaderInternalVideo();
+    const seekRaw = maxPresentationMediaTime(
+      primary,
+      texture,
+      presentationResumeTimeRef.current,
+    );
+    const dur =
+      primary != null &&
+      Number.isFinite(primary.duration) &&
+      primary.duration > 0
+        ? primary.duration
+        : null;
+    const seekT = dur != null ? Math.min(seekRaw, dur) : seekRaw;
+    presentationResumeTimeRef.current = seekT;
+
+    for (const v of videos) {
+      const cap =
+        Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null;
+      const t = cap != null ? Math.min(seekT, cap) : seekT;
+      try {
+        v.currentTime = t;
+      } catch {
+        /* ignore */
+      }
+    }
+    syncAudioAndShaderTextureVideo(primary ?? null);
+
+    if (!wasPlayingBeforeHideRef.current || !primary) return;
+
+    const tt = getShaderInternalVideo();
+    void tt?.play().catch(() => {});
+    void primary.play().catch(() => {});
+
+    requestAnimationFrame(() => {
+      syncAudioAndShaderTextureVideo(primary);
+      window.setTimeout(() => syncAudioAndShaderTextureVideo(primary), 160);
+      window.setTimeout(() => syncAudioAndShaderTextureVideo(primary), 420);
+    });
+  }, [presentationHidden]);
+
+  useEffect(() => {
+    if (presentationHidden) return;
     const tick = () => syncAudioAndShaderTextureVideo(audioVideoRef.current);
     tick();
     const id = window.setInterval(tick, AV_SYNC_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [videoSrc]);
+  }, [videoSrc, presentationHidden]);
 
   useEffect(() => {
     const el = audioVideoRef.current;
