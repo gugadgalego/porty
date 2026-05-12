@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import type { ProjectCarouselSlide } from "@/lib/portfolio-project";
 import {
   carouselFrameNavButtonClass,
@@ -150,14 +149,13 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
                 : carouselFrameNavOutlineActive,
             )}
           >
-            <CaretLeft
+            <i
               className={cn(
-                "size-4 shrink-0",
+                "ri-arrow-left-s-line inline-block size-4 shrink-0 text-center text-base leading-none",
                 !canPrev
                   ? carouselFrameNavIconDisabled
                   : carouselFrameNavIconActive,
               )}
-              weight="regular"
               aria-hidden
             />
           </Button>
@@ -174,14 +172,13 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
                 : carouselFrameNavOutlineActive,
             )}
           >
-            <CaretRight
+            <i
               className={cn(
-                "size-4 shrink-0",
+                "ri-arrow-right-s-line inline-block size-4 shrink-0 text-center text-base leading-none",
                 !canNext
                   ? carouselFrameNavIconDisabled
                   : carouselFrameNavIconActive,
               )}
-              weight="regular"
               aria-hidden
             />
           </Button>

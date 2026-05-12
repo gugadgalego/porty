@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { LanguageProvider } from "@/components/providers/language-provider";
+import { AppSiteBottomNav } from "@/components/app-site-bottom-nav";
 import { PullTab } from "@/components/pull-tab";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -52,6 +53,7 @@ export default function RootLayout({
           <LanguageProvider defaultLocale="pt">
             <TooltipProvider delayDuration={180}>
               {children}
+              <AppSiteBottomNav />
               <PullTab />
             </TooltipProvider>
           </LanguageProvider>

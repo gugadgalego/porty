@@ -1,0 +1,239 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { MagneticNavUl } from "@/components/magnetic-nav-ul";
+import { useLanguage } from "@/components/providers/language-provider";
+import {
+  SITE_BOTTOM_NAV_BUTTON_CLASS,
+  SITE_BOTTOM_NAV_CONTAINER_CLASS,
+  SITE_BOTTOM_NAV_FIXED_SHELL_CLASS,
+  SITE_BOTTOM_NAV_ITEM_CLASS,
+  SITE_BOTTOM_NAV_LAYER_CLASS,
+} from "@/components/site-bottom-nav";
+import {
+  PORTFOLIO_NAV_HERO_EXIT_DURATION_MS,
+  PORTFOLIO_NAV_HERO_EXIT_EASE,
+  PORTFOLIO_NAV_HERO_EXIT_TRANSLATE_PX,
+  SITE_BOTTOM_NAV_DURATION_MS,
+  SITE_BOTTOM_NAV_EASE,
+  SITE_BOTTOM_NAV_STAGGER_MS,
+  portfolioNavEnterSequenceMs,
+  portfolioNavExitGateMs,
+} from "@/lib/site-bottom-nav-motion";
+import { isChromeReady, subscribeChromeReady } from "@/lib/ui-chrome";
+import { cn } from "@/lib/utils";
+
+const ITEM_COUNT = 4;
+
+function wantBottomNav(pathname: string): boolean {
+  return pathname === "/sobre" || pathname.startsWith("/design/");
+}
+
+type Anim = "rest" | "in" | "out";
+
+/**
+ * Barra inferior fixa em `/sobre` e `/design/*`.
+ * Reutiliza a mesma coreografia da home ao abrir Design: saída estilo **hero** (fade + micro Y + blur,
+ * stagger direita→esquerda) e entrada estilo **nav inferior** (slide X da esquerda, stagger esquerda→direita).
+ */
+export function AppSiteBottomNav() {
+  const pathname = usePathname();
+  const { dictionary, locale } = useLanguage();
+  const want = wantBottomNav(pathname);
+
+  const [chromeOk, setChromeOk] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+  const [anim, setAnim] = React.useState<Anim>("rest");
+  const [inArmed, setInArmed] = React.useState(false);
+
+  const timersRef = React.useRef<number[]>([]);
+  const prevPathRef = React.useRef<string | null>(null);
+  const reducedRef = React.useRef(false);
+
+  const sections = React.useMemo(
+    () => [
+      { label: dictionary.sections.design, href: "/#design" },
+      { label: dictionary.sections.dev, href: "/#dev" },
+      { label: dictionary.sections.about, href: "/sobre" },
+      { label: dictionary.sections.cv, href: "/#cv" },
+    ],
+    [dictionary.sections],
+  );
+
+  const clearTimers = React.useCallback(() => {
+    for (const id of timersRef.current) window.clearTimeout(id);
+    timersRef.current = [];
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      clearTimers();
+    },
+    [clearTimers],
+  );
+
+  React.useEffect(() => {
+    reducedRef.current =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
+  /** Gate do chrome: um único subscribe — evita Strict Mode a remover o listener antes do `markChromeReady`. */
+  React.useEffect(() => {
+    if (isChromeReady()) {
+      setChromeOk(true);
+      return;
+    }
+    return subscribeChromeReady(() => {
+      setChromeOk(true);
+    });
+  }, []);
+
+  const runEnter = React.useCallback(() => {
+    clearTimers();
+    if (reducedRef.current) {
+      setAnim("rest");
+      setInArmed(true);
+      return;
+    }
+    setAnim("in");
+    setInArmed(false);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setInArmed(true));
+    });
+    const total = portfolioNavEnterSequenceMs(ITEM_COUNT);
+    const id = window.setTimeout(() => {
+      setAnim("rest");
+      setInArmed(true);
+    }, total);
+    timersRef.current.push(id);
+  }, [clearTimers]);
+
+  const runExitThen = React.useCallback(
+    (then: () => void) => {
+      clearTimers();
+      if (reducedRef.current) {
+        then();
+        return;
+      }
+      setAnim("out");
+      const gate = portfolioNavExitGateMs(ITEM_COUNT);
+      const id = window.setTimeout(() => {
+        then();
+      }, gate);
+      timersRef.current.push(id);
+    },
+    [clearTimers],
+  );
+
+  React.useEffect(() => {
+    if (!chromeOk) return;
+
+    const prev = prevPathRef.current;
+
+    if (!want) {
+      if (mounted) {
+        runExitThen(() => {
+          setMounted(false);
+          setAnim("rest");
+          setInArmed(true);
+        });
+      }
+    } else if (!mounted) {
+      setMounted(true);
+      if (reducedRef.current) {
+        setAnim("rest");
+        setInArmed(true);
+      } else {
+        setAnim("rest");
+        setInArmed(true);
+        runEnter();
+      }
+    } else if (prev !== null && prev !== pathname) {
+      runExitThen(() => {
+        runEnter();
+      });
+    }
+
+    prevPathRef.current = pathname;
+  }, [pathname, want, mounted, chromeOk, runEnter, runExitThen]);
+
+  if (!mounted) return null;
+
+  const lastI = sections.length - 1;
+
+  return (
+    <nav
+      key={locale}
+      aria-label="Secções do site"
+      className={cn(
+        SITE_BOTTOM_NAV_FIXED_SHELL_CLASS,
+        "fixed inset-x-0 bottom-0 pointer-events-auto",
+        SITE_BOTTOM_NAV_LAYER_CLASS,
+        anim === "out" && "pointer-events-none",
+      )}
+    >
+      <MagneticNavUl
+        className={SITE_BOTTOM_NAV_CONTAINER_CLASS}
+        magnetEnabled={anim === "rest"}
+      >
+        {sections.map((s, idx) => {
+          let opacity = 1;
+          let transform = "translate3d(0, 0, 0)";
+          let filter = "blur(0)";
+          let delayMs = 0;
+          let transition: string;
+
+          if (anim === "out") {
+            opacity = 0;
+            transform = `translate3d(0, ${PORTFOLIO_NAV_HERO_EXIT_TRANSLATE_PX}px, 0)`;
+            filter = "blur(2px)";
+            delayMs = (lastI - idx) * SITE_BOTTOM_NAV_STAGGER_MS;
+            transition = `opacity ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, transform ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, filter ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}`;
+          } else if (anim === "in") {
+            transition = `opacity ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}, transform ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}`;
+            filter = "blur(0)";
+            if (!inArmed) {
+              opacity = 0;
+              transform = "translate3d(-14px, 0, 0)";
+              delayMs = 0;
+            } else {
+              opacity = 1;
+              transform = "translate3d(0, 0, 0)";
+              delayMs = idx * SITE_BOTTOM_NAV_STAGGER_MS;
+            }
+          } else {
+            transition = `opacity ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}, transform ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}`;
+            filter = "blur(0)";
+          }
+
+          return (
+            <li
+              key={s.href}
+              className={SITE_BOTTOM_NAV_ITEM_CLASS}
+              style={{
+                opacity,
+                transform,
+                filter,
+                transition,
+                transitionDelay: `${delayMs}ms`,
+              }}
+            >
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className={SITE_BOTTOM_NAV_BUTTON_CLASS}
+              >
+                <Link href={s.href}>{s.label}</Link>
+              </Button>
+            </li>
+          );
+        })}
+      </MagneticNavUl>
+    </nav>
+  );
+}

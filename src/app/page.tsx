@@ -12,11 +12,19 @@ import { useLanguage } from "@/components/providers/language-provider";
 import { dictionaries } from "@/lib/i18n";
 import { getMirrorDictionary } from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
+import {
+  SITE_BOTTOM_NAV_DURATION_MS as NAV_ITEM_DURATION_MS,
+  SITE_BOTTOM_NAV_STAGGER_MS as NAV_ITEM_STAGGER_MS,
+  portfolioNavEnterSequenceMs,
+  portfolioNavExitGateMs,
+} from "@/lib/site-bottom-nav-motion";
 import { markChromeReady } from "@/lib/ui-chrome";
 import {
   SITE_BOTTOM_NAV_BUTTON_CLASS,
   SITE_BOTTOM_NAV_CONTAINER_CLASS,
+  SITE_BOTTOM_NAV_FIXED_SHELL_CLASS,
   SITE_BOTTOM_NAV_ITEM_CLASS,
+  SITE_BOTTOM_NAV_LAYER_CLASS,
 } from "@/components/site-bottom-nav";
 import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 
@@ -51,10 +59,6 @@ function designGridColumnCountForWidth(
   }
   return best;
 }
-/** Nav (Design): mesma “respiração” dos cartões — primeiro some no meio, reaparece no rodapé, depois a grid. */
-const NAV_ITEM_STAGGER_MS = PROJECT_CARD_STAGGER_MS;
-const NAV_ITEM_DURATION_MS = PROJECT_CARD_DURATION_MS;
-const NAV_SEQUENCE_BUFFER_MS = 40;
 /** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
 const INTRO_ENTRANCE_DURATION_MS = 560;
 const INTRO_ENTRANCE_STAGGER_MS = 92;
@@ -456,17 +460,11 @@ export default function Home() {
     setProjectsView(true);
 
     const count = sections.length;
-    const exitTotalMs =
-      Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
-      NAV_ITEM_DURATION_MS +
-      NAV_SEQUENCE_BUFFER_MS;
+    const exitTotalMs = portfolioNavExitGateMs(count);
 
     const tEnter = window.setTimeout(() => {
       setNavItemPhase("entering");
-      const enterTotalMs =
-        Math.max(0, count - 1) * NAV_ITEM_STAGGER_MS +
-        NAV_ITEM_DURATION_MS +
-        NAV_SEQUENCE_BUFFER_MS;
+      const enterTotalMs = portfolioNavEnterSequenceMs(count);
       const tReady = window.setTimeout(() => {
         setNavItemPhase("entered");
         setProjectNavReadyForGrid(true);
@@ -676,6 +674,7 @@ export default function Home() {
     scope: "hero" | "bottom";
   }) => {
     const isHero = opts.scope === "hero";
+
     return sections.map((section, idx) => {
       const lastIdx = sections.length - 1;
 
@@ -708,20 +707,26 @@ export default function Home() {
           ? navItemPhase !== "exiting"
           : navItemPhase !== "entering" && navItemPhase !== "entered");
 
+      const bottomSlideIn =
+        !isHero && opacity === 0 && projectsView && navItemPhase === "entering";
+
       return (
         <li
           key={`${opts.scope}-${section.href}`}
           className={SITE_BOTTOM_NAV_ITEM_CLASS}
           style={{
             opacity,
-            transform:
-              isHero && navHidden
+            transform: isHero
+              ? navHidden
                 ? "translate3d(0, 6px, 0)"
+                : "translate3d(0, 0, 0)"
+              : bottomSlideIn
+                ? "translate3d(-14px, 0, 0)"
                 : "translate3d(0, 0, 0)",
             filter: isHero && navHidden ? "blur(2px)" : "blur(0)",
             transition: isHero
               ? `opacity ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`
-              : `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
+              : `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}, transform ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
             transitionDelay: `${delayMs}ms`,
           }}
         >
@@ -1047,16 +1052,22 @@ export default function Home() {
               )}
             </div>
           </div>
+        </section>
+        {projectsView ? (
           <nav
             ref={bottomNavRef}
             aria-label="Secções do site"
-            className="fixed inset-x-0 bottom-0 z-30 pointer-events-auto"
+            className={cn(
+              SITE_BOTTOM_NAV_FIXED_SHELL_CLASS,
+              "fixed inset-x-0 bottom-0 pointer-events-auto",
+              SITE_BOTTOM_NAV_LAYER_CLASS,
+            )}
           >
             <MagneticNavUl className={navContainerClass} magnetEnabled={projectsView}>
               {renderNavButtons({ scope: "bottom" })}
             </MagneticNavUl>
           </nav>
-        </section>
+        ) : null}
       </main>
 
       {/* Medição invisível (PT/EN) para animar min-height só do idioma ativo e manter o hero recentralizado. */}

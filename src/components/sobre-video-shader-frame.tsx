@@ -13,12 +13,12 @@ import {
   VHS,
 } from "shaders/react";
 import { Button } from "@/components/ui/button";
+import { resumeSobreTvAudioContext } from "@/lib/sobre-tv-static-sound";
 import { cn } from "@/lib/utils";
 
-/** Ficheiro em `public/videos/`. */
-const VIDEO_SRC = "/videos/sobre-dijon.mp4";
-
-const VIDEO_MEDIA_STORAGE_KEY = "porty:sobre:sobre-dijon:mediaTime";
+function mediaStorageKey(videoSrc: string): string {
+  return `porty:sobre:mediaTime:${videoSrc}`;
+}
 
 /** Marca o `<video>` de áudio controlado por React. */
 const ATTR_PORTY_SOBRE_AUDIO = "data-porty-sobre-audio";
@@ -109,18 +109,18 @@ function maxPresentationMediaTime(
   return Math.max(na, nb, fb);
 }
 
-function readStoredMediaTime(): number | null {
+function readStoredMediaTime(src: string): number | null {
   if (typeof sessionStorage === "undefined") return null;
-  const raw = sessionStorage.getItem(VIDEO_MEDIA_STORAGE_KEY);
+  const raw = sessionStorage.getItem(mediaStorageKey(src));
   if (raw == null) return null;
   const n = Number.parseFloat(raw);
   return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-function writeStoredMediaTime(t: number) {
+function writeStoredMediaTime(src: string, t: number) {
   if (typeof sessionStorage === "undefined") return;
   if (!Number.isFinite(t) || t < 0) return;
-  sessionStorage.setItem(VIDEO_MEDIA_STORAGE_KEY, String(t));
+  sessionStorage.setItem(mediaStorageKey(src), String(t));
 }
 
 function syncAudioAndShaderTextureVideo(audioEl: HTMLVideoElement | null) {
@@ -151,9 +151,12 @@ function syncAudioAndShaderTextureVideo(audioEl: HTMLVideoElement | null) {
   }
 }
 
-function applyStoredMediaTimeToVideos(primary: HTMLVideoElement | null) {
+function applyStoredMediaTimeToVideos(
+  primary: HTMLVideoElement | null,
+  src: string,
+) {
   if (!primary) return;
-  const stored = readStoredMediaTime();
+  const stored = readStoredMediaTime(src);
   const t =
     stored != null
       ? Math.min(stored, primary.duration || stored)
@@ -196,20 +199,44 @@ const MUTE_BUTTON_CURSOR =
  * O som tenta iniciar ligado; muitos browsers bloqueiam autoplay com áudio — nesse caso voltamos a muted.
  *
  * O tempo em `sessionStorage` só é gravado ao sair da página Sobre (desmontagem), ao fechar o separador
- * ou ao navegar para outra rota (`pagehide`) — não durante a reprodução.
+ * ou ao navegar para outra rota (`pagehide`) — não durante a reprodução. A chave inclui o URL do vídeo.
  */
 export type SobreVideoShaderFrameProps = {
-  /** Quando o utilizador está noutro “slide” (CoverFlow): pausa e liberta CPU; o nó mantém-se montado. */
+  /** Caminho público do vídeo (ex. `/videos/clip.mp4`). */
+  videoSrc: string;
+  /** Primeira frame / metadados prontos — para atrasar legenda fora do shader. */
+  onMediaReady?: () => void;
+  /**
+   * Atenuação com o scroll: 0 = volume normal, 1 = quase silêncio (apenas se não muted).
+   */
+  volumeAttenuation?: number;
+  /** Quando falso e há `onClipEnded`, o evento `ended` do áudio dispara a troca de clip. */
+  loop?: boolean;
+  /** Chamado quando o clip termina (só relevante com `loop={false}`). */
+  onClipEnded?: () => void;
+  /**
+   * Quando o frame está oculto (ex. outro slide ativo): pausa e liberta CPU; o nó mantém-se montado.
+   */
   presentationHidden?: boolean;
 };
 
 export function SobreVideoShaderFrame({
+  videoSrc,
+  onMediaReady,
+  volumeAttenuation = 0,
+  loop = true,
+  onClipEnded,
   presentationHidden = false,
 }: SobreVideoShaderFrameProps) {
   const audioVideoRef = useRef<HTMLVideoElement>(null);
   const probeCleanupRef = useRef<(() => void) | null>(null);
+  const mediaReadySentRef = useRef(false);
+  const onMediaReadyRef = useRef(onMediaReady);
+  onMediaReadyRef.current = onMediaReady;
+  const onClipEndedRef = useRef(onClipEnded);
+  onClipEndedRef.current = onClipEnded;
   const wasPlayingBeforeHideRef = useRef(false);
-  /** Instantâneo ao sair do frame de vídeo — evita usar `currentTime` da textura a 0 após pausa. */
+  /** Instantâneo ao ocultar o frame — evita usar `currentTime` da textura a 0 após pausa. */
   const presentationResumeTimeRef = useRef(0);
   const [muted, setMuted] = useState(false);
   const [frameHovered, setFrameHovered] = useState(false);
@@ -237,14 +264,32 @@ export function SobreVideoShaderFrame({
     if (!el) return;
     const next = !el.muted;
     el.muted = next;
-    if (!next) el.volume = Math.max(el.volume, 0.35);
+    if (!next) {
+      void resumeSobreTvAudioContext();
+      const t = Math.min(1, Math.max(0, volumeAttenuation));
+      const hi = 0.44;
+      const lo = 0.045;
+      el.volume = lo + (hi - lo) * (1 - t * 0.94);
+    }
     setMuted(next);
-  }, []);
+  }, [volumeAttenuation]);
+
+  useEffect(() => {
+    const el = audioVideoRef.current;
+    if (!el || muted) return;
+    const t = Math.min(1, Math.max(0, volumeAttenuation));
+    const hi = 0.44;
+    const lo = 0.045;
+    el.volume = lo + (hi - lo) * (1 - t * 0.94);
+  }, [muted, volumeAttenuation]);
 
   useEffect(() => {
     const el = audioVideoRef.current;
     if (!el) return;
-    el.volume = Math.max(el.volume, 0.35);
+    const t = Math.min(1, Math.max(0, volumeAttenuation));
+    const hi = 0.44;
+    const lo = 0.045;
+    el.volume = lo + (hi - lo) * (1 - t * 0.94);
     const p = el.play();
     if (p === undefined) return;
     p.catch(() => {
@@ -252,22 +297,31 @@ export function SobreVideoShaderFrame({
       setMuted(true);
       void el.play().catch(() => {});
     });
-  }, []);
+  }, [videoSrc]);
 
   useEffect(() => {
     const el = audioVideoRef.current;
     if (!el) return;
 
+    mediaReadySentRef.current = false;
+
     const persistTime = () => {
       const a = audioVideoRef.current;
       const tt = getShaderInternalVideo();
-      writeStoredMediaTime(maxPresentationMediaTime(a, tt, 0));
+      writeStoredMediaTime(
+        videoSrc,
+        maxPresentationMediaTime(a, tt, 0),
+      );
     };
 
     const onLoaded = () => {
-      applyStoredMediaTimeToVideos(el);
+      applyStoredMediaTimeToVideos(el, videoSrc);
       requestAnimationFrame(() => syncAudioAndShaderTextureVideo(el));
       window.setTimeout(() => syncAudioAndShaderTextureVideo(el), 320);
+      if (!mediaReadySentRef.current) {
+        mediaReadySentRef.current = true;
+        queueMicrotask(() => onMediaReadyRef.current?.());
+      }
     };
     el.addEventListener("loadeddata", onLoaded);
     if (el.readyState >= 1) onLoaded();
@@ -280,7 +334,7 @@ export function SobreVideoShaderFrame({
       window.removeEventListener("pagehide", onPageHide);
       persistTime();
     };
-  }, []);
+  }, [videoSrc]);
 
   useEffect(() => {
     const videos = collectSobreDijonVideos();
@@ -351,11 +405,21 @@ export function SobreVideoShaderFrame({
     tick();
     const id = window.setInterval(tick, AV_SYNC_INTERVAL_MS);
     return () => window.clearInterval(id);
-  }, [presentationHidden]);
+  }, [videoSrc, presentationHidden]);
+
+  useEffect(() => {
+    const el = audioVideoRef.current;
+    if (!el || loop || !onClipEnded) return;
+    const onEnded = () => {
+      onClipEndedRef.current?.();
+    };
+    el.addEventListener("ended", onEnded);
+    return () => el.removeEventListener("ended", onEnded);
+  }, [videoSrc, loop, onClipEnded]);
 
   return (
     <div
-      className="relative isolate size-full min-h-0 overflow-hidden rounded-[inherit] bg-black"
+      className="relative isolate size-full min-h-0 overflow-hidden rounded-[inherit] [corner-shape:inherit] bg-black"
       style={{ cursor: SHADER_FRAME_CURSOR }}
       onMouseEnter={() => setFrameHovered(true)}
       onMouseLeave={() => setFrameHovered(false)}
@@ -371,10 +435,10 @@ export function SobreVideoShaderFrame({
         {...{ [ATTR_PORTY_SOBRE_AUDIO]: "" }}
         className="pointer-events-none absolute left-0 top-0 h-px w-px opacity-0"
         aria-hidden
-        src={VIDEO_SRC}
+        src={videoSrc}
         autoPlay
         muted={muted}
-        loop
+        loop={loop}
         playsInline
       />
 
@@ -396,9 +460,9 @@ export function SobreVideoShaderFrame({
       >
         <VideoTexture
           id={MAIN_VIDEO_TEX_ID}
-          url={VIDEO_SRC}
+          url={videoSrc}
           objectFit="cover"
-          loop
+          loop={loop}
         />
         <ImageTexture
           id={MAP_TEXTURE_ID}
