@@ -36,9 +36,10 @@ type Anim = "rest" | "in" | "out";
 
 /**
  * Barra inferior fixa em `/sobre` e `/design/*`.
- * Entrada em cascata **só** quando a barra monta (primeira vez nessa zona).
- * Depois de carregada, trocas entre `/sobre` e `/design/*` mantêm os botões
- * estáticos (sem re-disparar stagger de entrada/saída).
+ * Reutiliza a mesma coreografia da home ao abrir Design: saída estilo **hero** (fade + micro Y + blur,
+ * stagger direita→esquerda) e entrada estilo **nav inferior** (slide X da esquerda, stagger esquerda→direita).
+ * A entrada em cascata corre **só** quando a barra monta; depois disso, trocas entre `/sobre` e `/design/*`
+ * mantêm os botões estáticos (sem re-disparar stagger).
  */
 export function AppSiteBottomNav() {
   const pathname = usePathname();
