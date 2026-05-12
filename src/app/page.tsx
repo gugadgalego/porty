@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -73,6 +74,7 @@ const INTRO_BODY_STACK_CLASS = cn(
 );
 
 export default function Home() {
+  const router = useRouter();
   const { dictionary, locale, toggleLocale, ready: languageReady } =
     useLanguage();
   const { resolvedTheme, setTheme } = useTheme();
@@ -205,12 +207,18 @@ export default function Home() {
     "idle" | "exiting" | "entering" | "entered"
   >("idle");
   const navTransitionTimersRef = React.useRef<number[]>([]);
+  /** Saída do hero antes de `/sobre` (cancelável ao abrir Design). */
+  const heroSobreExitArmedRef = React.useRef(false);
 
   const clearNavTransitionTimers = React.useCallback(() => {
     for (const id of navTransitionTimersRef.current) {
       window.clearTimeout(id);
     }
     navTransitionTimersRef.current = [];
+    if (heroSobreExitArmedRef.current) {
+      heroSobreExitArmedRef.current = false;
+      setNavItemPhase("idle");
+    }
   }, []);
 
   React.useEffect(() => {
@@ -482,6 +490,30 @@ export default function Home() {
     [openDesignGrid],
   );
 
+  const handleHeroSobreClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (projectsView) return;
+      if (prefersReducedMotion) return;
+      event.preventDefault();
+      clearNavTransitionTimers();
+      heroSobreExitArmedRef.current = true;
+      setNavItemPhase("exiting");
+      const exitTotalMs = portfolioNavExitGateMs(sections.length);
+      const id = window.setTimeout(() => {
+        heroSobreExitArmedRef.current = false;
+        void router.push("/sobre");
+      }, exitTotalMs);
+      navTransitionTimersRef.current.push(id);
+    },
+    [
+      projectsView,
+      prefersReducedMotion,
+      clearNavTransitionTimers,
+      router,
+      sections.length,
+    ],
+  );
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const syncHashToDesignGrid = () => {
@@ -739,7 +771,11 @@ export default function Home() {
             <a
               href={section.href}
               onClick={
-                isHero && section.isProjects ? handleDesignClick : undefined
+                isHero && section.isProjects
+                  ? handleDesignClick
+                  : isHero && section.href === "/sobre"
+                    ? handleHeroSobreClick
+                    : undefined
               }
               tabIndex={isHero ? (projectsView ? -1 : 0) : projectsView ? 0 : -1}
               aria-hidden={isHero ? projectsView : !projectsView}
