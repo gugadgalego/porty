@@ -1,26 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import { ChromeReadyMark } from "@/components/chrome-ready-mark";
 import { SiteBottomNav } from "@/components/site-bottom-nav";
 import { SobreCoverflowFrame } from "@/components/sobre-coverflow-frame";
 import { SobreVideoShaderFrame } from "@/components/sobre-video-shader-frame";
+import { Button } from "@/components/ui/button";
+import {
+  carouselFrameNavButtonClass,
+  carouselFrameNavIconActive,
+  carouselFrameNavIconDisabled,
+  carouselFrameNavOutlineActive,
+  carouselFrameNavOutlineDisabled,
+} from "@/lib/carousel-frame-nav";
 import { cn } from "@/lib/utils";
 
 const FRAME = cn(
   "flex w-full min-w-0 max-w-[600px] flex-col items-center gap-6 text-center",
-);
-
-const ARROW_BTN = cn(
-  "flex items-center justify-center px-1.5 py-1 text-foreground outline outline-1 transition-opacity",
-  "outline-[#E5E5E5] dark:outline-border",
-  "enabled:hover:opacity-90 enabled:focus-visible:ring-2 enabled:focus-visible:ring-ring enabled:focus-visible:ring-offset-2",
-  "disabled:cursor-not-allowed disabled:opacity-35",
-);
-
-const ARROW_BTN_RIGHT = cn(
-  ARROW_BTN,
-  "outline-[#D4D4D4] dark:outline-muted-foreground/40",
 );
 
 export function SobrePageClient() {
@@ -47,48 +44,79 @@ export function SobrePageClient() {
               "relative w-full shrink-0 overflow-hidden rounded-lg",
               "aspect-[3/2] max-h-[min(56vh,400px)] min-h-[200px] max-w-[600px]",
               "shadow-[0_6px_8px_rgba(0,0,0,0.2)]",
+              "dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_2px_4px_rgba(0,0,0,0.4),0_20px_48px_-12px_rgba(0,0,0,0.85),0_12px_24px_-8px_rgba(0,0,0,0.65)]",
             )}
           >
-            {isVideoFrame ? <SobreVideoShaderFrame /> : <SobreCoverflowFrame />}
+            {/* Ambos montados: o vídeo/shader não desmonta ao ir ao CoverFlow — mantém tempo de reprodução. */}
+            <div
+              className={cn(
+                "absolute inset-0 overflow-hidden rounded-[inherit]",
+                isVideoFrame ? "z-10" : "invisible pointer-events-none z-0",
+              )}
+              aria-hidden={!isVideoFrame}
+            >
+              <SobreVideoShaderFrame presentationHidden={!isVideoFrame} />
+            </div>
+            <div
+              className={cn(
+                "absolute inset-0 overflow-hidden rounded-[inherit]",
+                !isVideoFrame ? "z-10" : "invisible pointer-events-none z-0",
+              )}
+              aria-hidden={isVideoFrame}
+            >
+              <SobreCoverflowFrame />
+            </div>
           </div>
 
           <div className="flex w-full items-center justify-center gap-2 p-0">
-            <button
+            <Button
               type="button"
-              className={ARROW_BTN}
+              variant="ghost"
               aria-label="Frame anterior: vídeo com shader"
               disabled={isVideoFrame}
               onClick={() => setFrameIndex(0)}
+              className={cn(
+                carouselFrameNavButtonClass,
+                isVideoFrame
+                  ? carouselFrameNavOutlineDisabled
+                  : carouselFrameNavOutlineActive,
+              )}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={16}
-                height={16}
-                fill="currentColor"
-                viewBox="0 0 256 256"
-                className="shrink-0 text-[#78716C] dark:text-muted-foreground"
-              >
-                <path d="M224,128a8,8,0,0,1-8,8H120v64a8,8,0,0,1-13.66,5.66l-72-72a8,8,0,0,1,0-11.32l72-72A8,8,0,0,1,120,56v64h96A8,8,0,0,1,224,128Z" />
-              </svg>
-            </button>
-            <button
+              <CaretLeft
+                className={cn(
+                  "size-4 shrink-0",
+                  isVideoFrame
+                    ? carouselFrameNavIconDisabled
+                    : carouselFrameNavIconActive,
+                )}
+                weight="regular"
+                aria-hidden
+              />
+            </Button>
+            <Button
               type="button"
-              className={ARROW_BTN_RIGHT}
+              variant="ghost"
               aria-label="Seguinte: CoverFlow"
               disabled={!isVideoFrame}
               onClick={() => setFrameIndex(1)}
+              className={cn(
+                carouselFrameNavButtonClass,
+                !isVideoFrame
+                  ? carouselFrameNavOutlineDisabled
+                  : carouselFrameNavOutlineActive,
+              )}
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width={16}
-                height={16}
-                fill="currentColor"
-                viewBox="0 0 256 256"
-                className="shrink-0 text-[#0C0A09] dark:text-foreground"
-              >
-                <path d="M221.66,133.66l-72,72A8,8,0,0,1,136,200V136H40a8,8,0,0,1,0-16h96V56a8,8,0,0,1,13.66-5.66l72,72A8,8,0,0,1,221.66,133.66Z" />
-              </svg>
-            </button>
+              <CaretRight
+                className={cn(
+                  "size-4 shrink-0",
+                  !isVideoFrame
+                    ? carouselFrameNavIconDisabled
+                    : carouselFrameNavIconActive,
+                )}
+                weight="regular"
+                aria-hidden
+              />
+            </Button>
           </div>
         </div>
       </div>

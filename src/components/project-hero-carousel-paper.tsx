@@ -3,7 +3,15 @@
 import * as React from "react";
 import { CaretLeft, CaretRight } from "@phosphor-icons/react/dist/ssr";
 import type { ProjectCarouselSlide } from "@/lib/portfolio-project";
+import {
+  carouselFrameNavButtonClass,
+  carouselFrameNavIconActive,
+  carouselFrameNavIconDisabled,
+  carouselFrameNavOutlineActive,
+  carouselFrameNavOutlineDisabled,
+} from "@/lib/carousel-frame-nav";
 import { useLanguage } from "@/components/providers/language-provider";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -129,40 +137,54 @@ export function ProjectHeroCarouselPaper({ slides, className }: Props) {
             "mt-[24px] flex w-full max-w-[600px] items-center justify-start gap-2",
           )}
         >
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-label={dictionary.carouselPrevious}
             disabled={!canPrev}
             onClick={() => go(-1)}
             className={cn(
-              "flex items-center justify-center gap-0 px-1.5 py-1",
-              "outline outline-1 outline-offset-0 outline-border transition-opacity",
-              !canPrev && "opacity-50",
+              carouselFrameNavButtonClass,
+              !canPrev
+                ? carouselFrameNavOutlineDisabled
+                : carouselFrameNavOutlineActive,
             )}
           >
             <CaretLeft
-              className="size-4 shrink-0 text-muted-foreground"
+              className={cn(
+                "size-4 shrink-0",
+                !canPrev
+                  ? carouselFrameNavIconDisabled
+                  : carouselFrameNavIconActive,
+              )}
               weight="regular"
               aria-hidden
             />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
             aria-label={dictionary.carouselNext}
             disabled={!canNext}
             onClick={() => go(1)}
             className={cn(
-              "flex items-center justify-center gap-0 px-1.5 py-1",
-              "outline outline-1 outline-offset-0 outline-border transition-opacity",
-              !canNext && "opacity-50",
+              carouselFrameNavButtonClass,
+              !canNext
+                ? carouselFrameNavOutlineDisabled
+                : carouselFrameNavOutlineActive,
             )}
           >
             <CaretRight
-              className="size-4 shrink-0 text-foreground"
+              className={cn(
+                "size-4 shrink-0",
+                !canNext
+                  ? carouselFrameNavIconDisabled
+                  : carouselFrameNavIconActive,
+              )}
               weight="regular"
               aria-hidden
             />
-          </button>
+          </Button>
         </div>
       ) : null}
     </div>
