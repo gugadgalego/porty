@@ -27,9 +27,6 @@ export const dictionaries = {
       "Ainda não há conteúdo para este projeto. Edita no CMS.",
     carouselPrevious: "Slide anterior",
     carouselNext: "Slide seguinte",
-    aboutPage: {
-      experienceLabel: "Experiência",
-    },
   },
   en: {
     languageToggle: "PT",
@@ -57,9 +54,6 @@ export const dictionaries = {
       "There is no content for this project yet. Edit it in the CMS.",
     carouselPrevious: "Previous slide",
     carouselNext: "Next slide",
-    aboutPage: {
-      experienceLabel: "Experience",
-    },
   },
 } as const;
 
