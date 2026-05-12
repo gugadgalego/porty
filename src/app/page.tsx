@@ -323,7 +323,7 @@ export default function Home() {
   const sections = [
     { label: dictionary.sections.design, href: "#design", isProjects: true },
     { label: dictionary.sections.dev, href: "#dev", isProjects: false },
-    { label: dictionary.sections.about, href: "#sobre", isProjects: false },
+    { label: dictionary.sections.about, href: "/sobre", isProjects: false },
     { label: dictionary.sections.cv, href: "#cv", isProjects: false },
   ];
 

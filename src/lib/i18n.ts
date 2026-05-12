@@ -27,6 +27,11 @@ export const dictionaries = {
       "Ainda não há conteúdo para este projeto. Edita no CMS.",
     carouselPrevious: "Slide anterior",
     carouselNext: "Slide seguinte",
+    aboutPage: {
+      bio: "Fora do trabalho, gosto muito de música e design.",
+      historyLabel: "Histórico",
+      avatarLabel: "Retrato de Gustavo Galego",
+    },
   },
   en: {
     languageToggle: "PT",
@@ -54,6 +59,11 @@ export const dictionaries = {
       "There is no content for this project yet. Edit it in the CMS.",
     carouselPrevious: "Previous slide",
     carouselNext: "Next slide",
+    aboutPage: {
+      bio: "Outside of work, I really enjoy music and design.",
+      historyLabel: "History",
+      avatarLabel: "Portrait of Gustavo Galego",
+    },
   },
 } as const;
 

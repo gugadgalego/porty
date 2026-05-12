@@ -9,8 +9,8 @@ import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 /** Mesmas classes da barra inferior da home (`renderNavButtons` scope bottom). */
 export const SITE_BOTTOM_NAV_CONTAINER_CLASS = cn(
   "grid w-full list-none grid-cols-4 items-stretch gap-3",
-  "px-4 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-2",
-  "bg-background",
+  /* Padding uniforme; sem fundo no contentor — só hover nos botões (e highlight magnético). */
+  "p-4",
 );
 
 /** Cada célula da grelha: `min-w-0` evita que o conteúdo force larguras desiguais. */
@@ -31,7 +31,7 @@ export function SiteBottomNav({ className }: { className?: string }) {
   const sections = [
     { label: dictionary.sections.design, href: "/#design" },
     { label: dictionary.sections.dev, href: "/#dev" },
-    { label: dictionary.sections.about, href: "/#sobre" },
+    { label: dictionary.sections.about, href: "/sobre" },
     { label: dictionary.sections.cv, href: "/#cv" },
   ];
 
