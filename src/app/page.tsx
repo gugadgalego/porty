@@ -14,6 +14,7 @@ import { dictionaries } from "@/lib/i18n";
 import { getMirrorDictionary } from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import {
+  PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY,
   SITE_BOTTOM_NAV_DURATION_MS as NAV_ITEM_DURATION_MS,
   SITE_BOTTOM_NAV_STAGGER_MS as NAV_ITEM_STAGGER_MS,
   portfolioNavEnterSequenceMs,
@@ -36,6 +37,7 @@ const INTRO_REVEAL_DELAY_MS = POST_TYPE_HOLD_INITIAL_MS + DRAMATIC_PAUSE_MS;
 const CHROME_REVEAL_DELAY_MS = INTRO_REVEAL_DELAY_MS + 360;
 /** Respiro depois da nav do hero ficar visível antes de revelar UI secundária (ex.: PullTab). */
 const SUPPORTING_UI_AFTER_CHROME_MS = 520;
+const ROUTED_DESIGN_ENTER_FRAME_DELAY_MS = 32;
 
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
@@ -59,6 +61,20 @@ function designGridColumnCountForWidth(
     else break;
   }
   return best;
+}
+
+function takeRouteToDesignNavFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const flagged =
+      window.sessionStorage.getItem(PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY) === "1";
+    if (flagged) {
+      window.sessionStorage.removeItem(PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY);
+    }
+    return flagged;
+  } catch {
+    return false;
+  }
 }
 /** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
 const INTRO_ENTRANCE_DURATION_MS = 560;
@@ -451,6 +467,7 @@ export default function Home() {
    */
   const openDesignGrid = React.useCallback(() => {
     if (projectsView) return;
+    const enteredAfterRouteExit = takeRouteToDesignNavFlag();
     if (
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -468,7 +485,9 @@ export default function Home() {
     setProjectsView(true);
 
     const count = sections.length;
-    const exitTotalMs = portfolioNavExitGateMs(count);
+    const enterDelayMs = enteredAfterRouteExit
+      ? ROUTED_DESIGN_ENTER_FRAME_DELAY_MS
+      : portfolioNavExitGateMs(count);
 
     const tEnter = window.setTimeout(() => {
       setNavItemPhase("entering");
@@ -478,7 +497,7 @@ export default function Home() {
         setProjectNavReadyForGrid(true);
       }, enterTotalMs);
       navTransitionTimersRef.current.push(tReady);
-    }, exitTotalMs);
+    }, enterDelayMs);
     navTransitionTimersRef.current.push(tEnter);
   }, [projectsView, clearNavTransitionTimers, sections.length]);
 
@@ -510,6 +529,52 @@ export default function Home() {
       prefersReducedMotion,
       clearNavTransitionTimers,
       router,
+      sections.length,
+    ],
+  );
+
+  const handleBottomNavClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.currentTarget.getAttribute("target");
+      if (target != null && target !== "_self") return;
+      if (typeof window === "undefined") return;
+
+      const url = new URL(href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+
+      event.preventDefault();
+      if (url.pathname === "/" && url.hash === "#design") return;
+
+      const targetHref = `${url.pathname}${url.search}${url.hash}`;
+      if (prefersReducedMotion) {
+        router.push(targetHref);
+        return;
+      }
+
+      clearNavTransitionTimers();
+      setProjectNavReadyForGrid(false);
+      setProjectCardsRevealed(false);
+      setNavItemPhase("exiting");
+
+      const id = window.setTimeout(() => {
+        if (url.pathname === "/" && url.hash !== "#design") {
+          setProjectsView(false);
+          setNavItemPhase("idle");
+        }
+        router.push(targetHref);
+      }, portfolioNavExitGateMs(sections.length));
+      navTransitionTimersRef.current.push(id);
+    },
+    [
+      prefersReducedMotion,
+      router,
+      clearNavTransitionTimers,
       sections.length,
     ],
   );
@@ -730,6 +795,8 @@ export default function Home() {
       } else {
         if (navItemPhase === "entering") {
           delayMs = idx * NAV_ITEM_STAGGER_MS;
+        } else if (navItemPhase === "exiting") {
+          delayMs = (lastIdx - idx) * NAV_ITEM_STAGGER_MS;
         }
       }
 
@@ -756,7 +823,7 @@ export default function Home() {
                 ? "translate3d(-14px, 0, 0)"
                 : "translate3d(0, 0, 0)",
             filter: isHero && navHidden ? "blur(2px)" : "blur(0)",
-            transition: isHero
+            transition: isHero || navItemPhase === "exiting"
               ? `opacity ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`
               : `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}, transform ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
             transitionDelay: `${delayMs}ms`,
@@ -775,6 +842,8 @@ export default function Home() {
                   ? handleDesignClick
                   : isHero && section.href === "/sobre"
                     ? handleHeroSobreClick
+                    : !isHero
+                      ? (event) => handleBottomNavClick(event, section.href)
                     : undefined
               }
               tabIndex={isHero ? (projectsView ? -1 : 0) : projectsView ? 0 : -1}

@@ -3,6 +3,8 @@ export const SITE_BOTTOM_NAV_STAGGER_MS = 70;
 export const SITE_BOTTOM_NAV_DURATION_MS = 420;
 export const SITE_BOTTOM_NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 export const SITE_BOTTOM_NAV_BUFFER_MS = 40;
+export const PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY =
+  "porty:portfolio-nav:route-to-design";
 
 /** Hero ao abrir Design: mesmos ms/curva que `renderNavButtons` scope hero em `exiting`. */
 export const PORTFOLIO_NAV_HERO_EXIT_DURATION_MS = 520;

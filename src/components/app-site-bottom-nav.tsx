@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 import { useLanguage } from "@/components/providers/language-provider";
@@ -16,7 +16,7 @@ import {
 import {
   PORTFOLIO_NAV_HERO_EXIT_DURATION_MS,
   PORTFOLIO_NAV_HERO_EXIT_EASE,
-  PORTFOLIO_NAV_HERO_EXIT_TRANSLATE_PX,
+  PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY,
   SITE_BOTTOM_NAV_DURATION_MS,
   SITE_BOTTOM_NAV_EASE,
   SITE_BOTTOM_NAV_STAGGER_MS,
@@ -36,13 +36,12 @@ type Anim = "rest" | "in" | "out";
 
 /**
  * Barra inferior fixa em `/sobre` e `/design/*`.
- * Reutiliza a mesma coreografia da home ao abrir Design: saída estilo **hero** (fade + micro Y + blur,
- * stagger direita→esquerda) e entrada estilo **nav inferior** (slide X da esquerda, stagger esquerda→direita).
- * A entrada em cascata corre **só** quando a barra monta; depois disso, trocas entre `/sobre` e `/design/*`
- * mantêm os botões estáticos (sem re-disparar stagger).
+ * Reutiliza a coreografia da home ao abrir Design:
+ * saída em fade direita→esquerda, depois entrada em fade esquerda→direita.
  */
 export function AppSiteBottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const { dictionary, locale } = useLanguage();
   const want = wantBottomNav(pathname);
 
@@ -54,6 +53,8 @@ export function AppSiteBottomNav() {
   const timersRef = React.useRef<number[]>([]);
   const reducedRef = React.useRef(false);
   const prevPathnameRef = React.useRef<string | null>(null);
+  const transitionRunRef = React.useRef(0);
+  const enterAfterNavigationRef = React.useRef(false);
 
   const sections = React.useMemo(
     () => [
@@ -66,6 +67,7 @@ export function AppSiteBottomNav() {
   );
 
   const clearTimers = React.useCallback(() => {
+    transitionRunRef.current += 1;
     for (const id of timersRef.current) window.clearTimeout(id);
     timersRef.current = [];
   }, []);
@@ -103,20 +105,40 @@ export function AppSiteBottomNav() {
     }
     setAnim("in");
     setInArmed(false);
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => setInArmed(true));
-    });
-    const total = portfolioNavEnterSequenceMs(ITEM_COUNT);
-    const id = window.setTimeout(() => {
-      setAnim("rest");
-      setInArmed(true);
-    }, total);
-    timersRef.current.push(id);
   }, [clearTimers]);
+
+  React.useEffect(() => {
+    if (!mounted || anim !== "in" || inArmed || reducedRef.current) return;
+
+    const runId = transitionRunRef.current;
+    let raf0 = 0;
+    let raf1 = 0;
+
+    raf0 = window.requestAnimationFrame(() => {
+      raf1 = window.requestAnimationFrame(() => {
+        if (transitionRunRef.current !== runId) return;
+        setInArmed(true);
+
+        const total = portfolioNavEnterSequenceMs(ITEM_COUNT);
+        const id = window.setTimeout(() => {
+          if (transitionRunRef.current !== runId) return;
+          setAnim("rest");
+          setInArmed(true);
+        }, total);
+        timersRef.current.push(id);
+      });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(raf0);
+      window.cancelAnimationFrame(raf1);
+    };
+  }, [mounted, anim, inArmed]);
 
   const runExitThen = React.useCallback(
     (then: () => void) => {
       clearTimers();
+      const runId = transitionRunRef.current;
       if (reducedRef.current) {
         then();
         return;
@@ -124,11 +146,73 @@ export function AppSiteBottomNav() {
       setAnim("out");
       const gate = portfolioNavExitGateMs(ITEM_COUNT);
       const id = window.setTimeout(() => {
+        if (transitionRunRef.current !== runId) return;
         then();
       }, gate);
       timersRef.current.push(id);
     },
     [clearTimers],
+  );
+
+  const navigateAfterExit = React.useCallback(
+    (href: string) => {
+      runExitThen(() => {
+        let targetPathname = href;
+        let targetHref = href;
+
+        if (typeof window !== "undefined") {
+          const url = new URL(href, window.location.href);
+          targetPathname = url.pathname;
+          targetHref = `${url.pathname}${url.search}${url.hash}`;
+
+          if (url.pathname === "/" && url.hash === "#design") {
+            window.sessionStorage.setItem(
+              PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY,
+              "1",
+            );
+          }
+        }
+
+        if (wantBottomNav(targetPathname)) {
+          enterAfterNavigationRef.current = true;
+        } else {
+          setMounted(false);
+          setAnim("rest");
+          setInArmed(true);
+        }
+
+        router.push(targetHref);
+      });
+    },
+    [router, runExitThen],
+  );
+
+  const handleNavClick = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      if (event.defaultPrevented) return;
+      if (event.button !== 0) return;
+      if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.currentTarget.getAttribute("target");
+      if (target != null && target !== "_self") return;
+      if (typeof window === "undefined") return;
+
+      const url = new URL(href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+
+      const currentHref = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const nextHref = `${url.pathname}${url.search}${url.hash}`;
+      if (nextHref === currentHref) {
+        event.preventDefault();
+        return;
+      }
+
+      event.preventDefault();
+      navigateAfterExit(nextHref);
+    },
+    [navigateAfterExit],
   );
 
   React.useEffect(() => {
@@ -160,13 +244,18 @@ export function AppSiteBottomNav() {
       prev !== null &&
       prev !== pathname
     ) {
-      clearTimers();
-      setAnim("rest");
-      setInArmed(true);
+      if (enterAfterNavigationRef.current) {
+        enterAfterNavigationRef.current = false;
+        runEnter();
+      } else {
+        clearTimers();
+        setAnim("rest");
+        setInArmed(true);
+      }
     }
 
     prevPathnameRef.current = pathname;
-  }, [pathname, want, mounted, chromeOk, runEnter, runExitThen]);
+  }, [pathname, want, mounted, chromeOk, runEnter, runExitThen, clearTimers]);
 
   if (!mounted) return null;
 
@@ -196,8 +285,8 @@ export function AppSiteBottomNav() {
 
           if (anim === "out") {
             opacity = 0;
-            transform = `translate3d(0, ${PORTFOLIO_NAV_HERO_EXIT_TRANSLATE_PX}px, 0)`;
-            filter = "blur(2px)";
+            transform = "translate3d(0, 0, 0)";
+            filter = "blur(0)";
             delayMs = (lastI - idx) * SITE_BOTTOM_NAV_STAGGER_MS;
             transition = `opacity ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, transform ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, filter ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}`;
           } else if (anim === "in") {
@@ -205,7 +294,7 @@ export function AppSiteBottomNav() {
             filter = "blur(0)";
             if (!inArmed) {
               opacity = 0;
-              transform = "translate3d(-14px, 0, 0)";
+              transform = "translate3d(0, 0, 0)";
               delayMs = 0;
             } else {
               opacity = 1;
@@ -235,7 +324,12 @@ export function AppSiteBottomNav() {
                 size="sm"
                 className={SITE_BOTTOM_NAV_BUTTON_CLASS}
               >
-                <Link href={s.href}>{s.label}</Link>
+                <Link
+                  href={s.href}
+                  onClick={(event) => handleNavClick(event, s.href)}
+                >
+                  {s.label}
+                </Link>
               </Button>
             </li>
           );
