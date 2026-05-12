@@ -6,9 +6,6 @@ import { SiteBottomNav } from "@/components/site-bottom-nav";
 import { ShaderEffect } from "@/components/shader-effect";
 import { cn } from "@/lib/utils";
 
-const AVATAR_URL =
-  "https://app.paper.design/file-assets/01KPNS3XEFGC9EW06GG45CE494/01KR9RR2B3ASMQG727R921B0EH.jpg";
-
 const FRAME =
   "flex w-full min-w-0 max-w-[600px] flex-col items-stretch text-left";
 
@@ -29,22 +26,6 @@ export function SobrePageClient() {
           "box-border gap-6 px-6 pt-[max(6.125rem,env(safe-area-inset-top,0px))] sm:px-8",
         )}
       >
-        <div
-          className="size-10 shrink-0 rounded-full bg-cover bg-center"
-          style={{ backgroundImage: `url(${AVATAR_URL})` }}
-          role="img"
-          aria-label={dictionary.aboutPage.avatarLabel}
-        />
-
-        <p
-          className={cn(
-            "m-0 w-full max-w-none text-pretty font-sans text-[14px] font-light leading-[150%]",
-            "text-[#78716C] dark:text-muted-foreground",
-          )}
-        >
-          {dictionary.aboutPage.bio}
-        </p>
-
         <div
           className={cn(
             "relative w-full shrink-0 overflow-hidden rounded-lg",
@@ -87,11 +68,11 @@ export function SobrePageClient() {
 
         <p
           className={cn(
-            "m-0 w-fit text-center font-sans text-[14px] font-light italic leading-[130%]",
+            "m-0 w-fit text-center font-sans text-[14px] font-normal italic leading-[130%]",
             "text-[#0C0A09] dark:text-foreground",
           )}
         >
-          {dictionary.aboutPage.historyLabel}
+          {dictionary.aboutPage.experienceLabel}
         </p>
       </div>
 

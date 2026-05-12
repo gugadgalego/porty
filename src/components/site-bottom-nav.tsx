@@ -9,8 +9,8 @@ import { MagneticNavUl } from "@/components/magnetic-nav-ul";
 /** Mesmas classes da barra inferior da home (`renderNavButtons` scope bottom). */
 export const SITE_BOTTOM_NAV_CONTAINER_CLASS = cn(
   "grid w-full list-none grid-cols-4 items-stretch gap-3",
-  /* Padding uniforme; sem fundo no contentor — só hover nos botões (e highlight magnético). */
-  "p-4",
+  /* Padding uniforme e compacto junto às bordas; sem fundo no contentor. */
+  "p-2",
 );
 
 /** Cada célula da grelha: `min-w-0` evita que o conteúdo force larguras desiguais. */
