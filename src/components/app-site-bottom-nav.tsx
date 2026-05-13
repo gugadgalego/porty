@@ -281,17 +281,26 @@ export function AppSiteBottomNav() {
           let transform = "translate3d(0, 0, 0)";
           let filter = "blur(0)";
           let delayMs = 0;
-          let transition: string;
+          let transitionProps: React.CSSProperties;
 
           if (anim === "out") {
             opacity = 0;
             transform = "translate3d(0, 0, 0)";
             filter = "blur(0)";
             delayMs = (lastI - idx) * SITE_BOTTOM_NAV_STAGGER_MS;
-            transition = `opacity ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, transform ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}, filter ${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms ${PORTFOLIO_NAV_HERO_EXIT_EASE}`;
+            const d = `${PORTFOLIO_NAV_HERO_EXIT_DURATION_MS}ms`;
+            const ease = PORTFOLIO_NAV_HERO_EXIT_EASE;
+            const delay = `${delayMs}ms`;
+            transitionProps = {
+              transitionProperty: "opacity, transform, filter",
+              transitionDuration: `${d}, ${d}, ${d}`,
+              transitionTimingFunction: `${ease}, ${ease}, ${ease}`,
+              transitionDelay: `${delay}, ${delay}, ${delay}`,
+            };
           } else if (anim === "in") {
-            transition = `opacity ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}, transform ${SITE_BOTTOM_NAV_DURATION_MS}ms ${SITE_BOTTOM_NAV_EASE}`;
             filter = "blur(0)";
+            const d = `${SITE_BOTTOM_NAV_DURATION_MS}ms`;
+            const ease = SITE_BOTTOM_NAV_EASE;
             if (!inArmed) {
               opacity = 0;
               transform = "translate3d(0, 0, 0)";
@@ -301,9 +310,21 @@ export function AppSiteBottomNav() {
               transform = "translate3d(0, 0, 0)";
               delayMs = idx * SITE_BOTTOM_NAV_STAGGER_MS;
             }
+            const delay = `${delayMs}ms`;
+            transitionProps = {
+              transitionProperty: "opacity, transform",
+              transitionDuration: `${d}, ${d}`,
+              transitionTimingFunction: `${ease}, ${ease}`,
+              transitionDelay: `${delay}, ${delay}`,
+            };
           } else {
-            transition = "none";
             filter = "blur(0)";
+            transitionProps = {
+              transitionProperty: "none",
+              transitionDuration: "0s",
+              transitionTimingFunction: "ease",
+              transitionDelay: "0s",
+            };
           }
 
           return (
@@ -314,8 +335,7 @@ export function AppSiteBottomNav() {
                 opacity,
                 transform,
                 filter,
-                transition,
-                transitionDelay: `${delayMs}ms`,
+                ...transitionProps,
               }}
             >
               <Button

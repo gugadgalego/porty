@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { put } from "@vercel/blob";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { CMS_SESSION_COOKIE, verifySessionToken } from "@/lib/cms-auth";
@@ -75,6 +76,32 @@ export async function POST(req: Request) {
     }
     const buf = Buffer.from(await file.arrayBuffer());
     const name = `${randomBytes(16).toString("hex")}${ext}`;
+    const blobToken = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+
+    if (blobToken) {
+      try {
+        const pathname = `sobre-videos/${name}`;
+        const blob = await put(pathname, buf, {
+          access: "public",
+          token: blobToken,
+          multipart: file.size >= 4.5 * 1024 * 1024,
+          contentType:
+            file.type ||
+            (ext === ".mp4"
+              ? "video/mp4"
+              : ext === ".webm"
+                ? "video/webm"
+                : ext === ".ogg"
+                  ? "video/ogg"
+                  : "video/quicktime"),
+        });
+        return NextResponse.json({ url: blob.url });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Erro ao enviar para o Blob";
+        return NextResponse.json({ error: msg }, { status: 500 });
+      }
+    }
+
     const dir = path.join(process.cwd(), "public", "cms-uploads", "videos");
     const full = path.join(dir, name);
 

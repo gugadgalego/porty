@@ -305,8 +305,7 @@ export function IntroParagraphLocaleWave({
                 slotId={row.slotId}
                 play={false}
                 scrambleSessionKey={revealKey}
-                waveSpanIndex={idx}
-                waveSpanRefs={spanRefs}
+                waveLabelRef={setSpanRef(idx)}
               />
               {row.trailingPunct}
             </span>
