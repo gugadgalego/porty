@@ -27,7 +27,8 @@ export const dictionaries = {
       "Ainda não há conteúdo para este projeto. Edita no CMS.",
     carouselPrevious: "Slide anterior",
     carouselNext: "Slide seguinte",
-    sobreCaptionLine: "Experiência",
+    sobreCaptionLine:
+      "Além do design, sou apaixonado por música e moda",
     sobreCaptionIconClass: "ri-arrow-down-s-line",
     sobreExperienciaEntries: [
       {
@@ -73,7 +74,8 @@ export const dictionaries = {
       "There is no content for this project yet. Edit it in the CMS.",
     carouselPrevious: "Previous slide",
     carouselNext: "Next slide",
-    sobreCaptionLine: "Experience",
+    sobreCaptionLine:
+      "Beyond design, I'm passionate about music and fashion",
     sobreCaptionIconClass: "ri-arrow-down-s-line",
     sobreExperienciaEntries: [
       {

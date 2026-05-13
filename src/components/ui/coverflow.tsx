@@ -1,4 +1,7 @@
+"use client";
+
 import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import {
   motion,
   useMotionValue,
@@ -59,13 +62,14 @@ export function CoverFlow({
     damping: 30,
     mass: 1,
   });
+  const prevInitialIndexRef = useRef(initialIndex);
 
   useEffect(() => {
-    if (initialIndex !== activeIndex) {
-      setActiveIndex(initialIndex);
-      scrollX.set(initialIndex);
-    }
-  }, [initialIndex]);
+    if (prevInitialIndexRef.current === initialIndex) return;
+    prevInitialIndexRef.current = initialIndex;
+    setActiveIndex(initialIndex);
+    scrollX.set(initialIndex);
+  }, [initialIndex, scrollX]);
 
   useEffect(() => {
     onIndexChange?.(activeIndex);
@@ -337,12 +341,14 @@ function CoverFlowItemCard({
       <div className="relative h-full w-full rounded-xl bg-black shadow-2xl">
         <div className="pointer-events-none absolute inset-0 z-20 rounded-xl border border-white/10" />
         <div className="relative h-full w-full overflow-hidden rounded-xl">
-          <img
+          <Image
             src={item.image}
             alt={item.title}
+            fill
             className="select-none object-cover pointer-events-none"
+            sizes={`${Math.round(width)}px`}
             draggable={false}
-            sizes={`${width}px`}
+            unoptimized
           />
           <div className="pointer-events-none absolute inset-0 z-10 bg-linear-to-tr from-white/10 to-transparent opacity-0 dark:opacity-20" />
         </div>
@@ -362,11 +368,13 @@ function CoverFlowItemCard({
             className="relative h-full w-full opacity-40"
             style={{ transform: "scaleY(-1)" }}
           >
-            <img
+            <Image
               src={item.image}
               alt=""
+              fill
               className="object-cover blur-[1px]"
-              sizes={`${width}px`}
+              sizes={`${Math.round(width)}px`}
+              unoptimized
             />
             <div className="absolute inset-0 bg-linear-to-b from-background/90 to-transparent" />
           </div>

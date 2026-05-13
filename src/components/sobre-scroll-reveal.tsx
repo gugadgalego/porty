@@ -10,6 +10,12 @@ type Props = {
   scrollUnlocked: boolean;
   /** Atraso extra na transição quando o bloco entra em vista (escalonar itens). */
   revealDelayMs?: number;
+  /**
+   * `fade`: só opacidade — evita `transform` aninhado com filhos que também animam `transform`
+   * (ex.: polaroids com rotação + sombras, onde filtros/boxes compõem mal ao scroll).
+   * Default: entrada com leve `translateY` como os itens da timeline.
+   */
+  revealMotion?: "slide-up" | "fade";
 };
 
 const REVEAL_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -24,6 +30,7 @@ export function SobreScrollReveal({
   className,
   scrollUnlocked,
   revealDelayMs = 0,
+  revealMotion = "slide-up",
 }: Props) {
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [reduced, setReduced] = React.useState(false);
@@ -73,21 +80,30 @@ export function SobreScrollReveal({
   }, [scrollUnlocked, reduced]);
 
   const revealed = reduced || inView;
+  const fadeOnly = revealMotion === "fade";
+
+  /** Atraso só na animação de entrada (evita re-aplicar após já visível). */
+  const entranceDelayMs =
+    !reduced && revealDelayMs > 0 && revealed ? revealDelayMs : 0;
 
   return (
     <div
       ref={rootRef}
-      className={cn("will-change-[opacity,transform]", className)}
+      className={cn(
+        fadeOnly ? "[will-change:opacity]" : "will-change-[opacity,transform]",
+        className,
+      )}
       style={{
         opacity: revealed ? 1 : 0,
-        transform: revealed ? "translate3d(0, 0, 0)" : "translate3d(0, 2rem, 0)",
-        transitionProperty: "opacity, transform",
+        transform: fadeOnly
+          ? undefined
+          : revealed
+            ? "translate3d(0, 0, 0)"
+            : "translate3d(0, 2rem, 0)",
+        transitionProperty: fadeOnly ? "opacity" : "opacity, transform",
         transitionDuration: reduced ? "200ms" : `${REVEAL_DURATION_MS}ms`,
         transitionTimingFunction: REVEAL_EASE,
-        transitionDelay:
-          revealed && !reduced && revealDelayMs > 0
-            ? `${revealDelayMs}ms`
-            : "0ms",
+        transitionDelay: `${entranceDelayMs}ms`,
       }}
     >
       {children}

@@ -235,6 +235,8 @@ export function SobreVideoShaderFrame({
   onMediaReadyRef.current = onMediaReady;
   const onClipEndedRef = useRef(onClipEnded);
   onClipEndedRef.current = onClipEnded;
+  const volumeAttenuationRef = useRef(volumeAttenuation);
+  volumeAttenuationRef.current = volumeAttenuation;
   const wasPlayingBeforeHideRef = useRef(false);
   /** Instantâneo ao ocultar o frame — evita usar `currentTime` da textura a 0 após pausa. */
   const presentationResumeTimeRef = useRef(0);
@@ -286,7 +288,7 @@ export function SobreVideoShaderFrame({
   useEffect(() => {
     const el = audioVideoRef.current;
     if (!el) return;
-    const t = Math.min(1, Math.max(0, volumeAttenuation));
+    const t = Math.min(1, Math.max(0, volumeAttenuationRef.current));
     const hi = 0.44;
     const lo = 0.045;
     el.volume = lo + (hi - lo) * (1 - t * 0.94);

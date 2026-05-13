@@ -8,14 +8,43 @@ export const CMS_SOBRE_VIDEOS_DATA_PATH = path.join(
 
 export type SobreCmsVideo = { id: string; url: string };
 
-/** Apenas caminhos relativos ao site (ficheiros em `public/`). */
-export function isSafeVideoUrl(url: string): boolean {
-  const t = url.trim();
+const VIDEO_FILE_EXT = /\.(mp4|webm|ogg|mov)$/i;
+
+/** Caminhos relativos ao site (ficheiros em `public/`). */
+function isSafeRelativeVideoUrl(t: string): boolean {
   if (!t.startsWith("/") || t.startsWith("//")) return false;
   if (t.includes("..")) return false;
   if (t.length > 512) return false;
   const pathOnly = t.split("?")[0]?.split("#")[0] ?? "";
   return /^\/[a-zA-Z0-9/_\.%~-]+\.(mp4|webm|ogg|mov)$/i.test(pathOnly);
+}
+
+/**
+ * URLs HTTPS públicas (ex.: Vercel Blob, CDN) — recusamos `http:`, credenciais e anfitriões locais.
+ */
+function isSafeHttpsVideoUrl(t: string): boolean {
+  if (t.length > 2048 || t.includes("<") || t.includes(">")) return false;
+  let u: URL;
+  try {
+    u = new URL(t);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  if (u.username !== "" || u.password !== "") return false;
+  const host = u.hostname.toLowerCase();
+  if (host === "localhost" || host.endsWith(".localhost")) return false;
+  if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host))
+    return false;
+  const pathOnly = u.pathname.split("?")[0]?.split("#")[0] ?? u.pathname;
+  return VIDEO_FILE_EXT.test(pathOnly);
+}
+
+/** Caminho em `public/` ou URL HTTPS de vídeo (CDN / Blob). */
+export function isSafeVideoUrl(url: string): boolean {
+  const t = url.trim();
+  if (t.startsWith("https://")) return isSafeHttpsVideoUrl(t);
+  return isSafeRelativeVideoUrl(t);
 }
 
 export function normalizeSobreVideoInput(

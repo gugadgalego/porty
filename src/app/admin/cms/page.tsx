@@ -344,13 +344,17 @@ export default function AdminCmsPage() {
               Carrega um ficheiro de vídeo (MP4, WebM, OGG ou MOV, até 120MB) ou
               cola um caminho em{" "}
               <code className="font-mono text-[11px]">public/</code> (ex.{" "}
-              <code className="font-mono text-[11px]">/videos/clip.mp4</code>).
-              Os uploads ficam em{" "}
+              <code className="font-mono text-[11px]">/videos/clip.mp4</code>)
+              ou uma URL <code className="font-mono text-[11px]">https://</code>{" "}
+              (Blob, CDN). Em produção, com{" "}
               <code className="font-mono text-[11px]">
-                /cms-uploads/videos/
-              </code>
-              . Em cada sessão de browser é escolhido um clip ao acaso desta
-              lista.
+                BLOB_READ_WRITE_TOKEN
+              </code>{" "}
+              na Vercel, o carregamento envia o clip para o Blob e devolve um
+              link público; sem token, o ficheiro fica só em{" "}
+              <code className="font-mono text-[11px]">/cms-uploads/videos/</code>{" "}
+              (adequado ao desenvolvimento local). Em cada sessão é escolhido um
+              clip ao acaso desta lista.
             </p>
             {sobreMessage ? (
               <p className="mt-4 rounded-none border border-border bg-muted/40 px-3 py-2 font-mono text-[11px] text-foreground">
@@ -388,7 +392,7 @@ export default function AdminCmsPage() {
                       <input
                         className="min-w-0 rounded-none border border-border bg-background px-2 py-1.5 font-mono text-xs text-foreground"
                         value={v.url}
-                        placeholder="/cms-uploads/videos/…"
+                        placeholder="/videos/… ou https://…"
                         onChange={(e) => {
                           const t = e.target.value;
                           setSobreVideos((prev) =>

@@ -41,6 +41,8 @@ export function SobrePageClient() {
   const [captionOn, setCaptionOn] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const captionTimerRef = useRef<number | null>(null);
+  /** Sincronizado com o scroll — usado no som de estática sem recriar `handleClipEnded` a cada frame. */
+  const scrollAttenRef = useRef(0);
 
   const onMediaReady = useCallback(() => {
     setMediaReady(true);
@@ -80,7 +82,11 @@ export function SobrePageClient() {
 
     setStaticGlitch(true);
     void resumeSobreTvAudioContext().then(() => {
-      playSobreTvStaticGlitchSound(0.22);
+      const base = 0.075;
+      const t = scrollAttenRef.current;
+      /** Mais baixo no topo; com scroll quase silencioso. */
+      const vol = base * Math.max(0.018, 1 - 0.96 * t);
+      playSobreTvStaticGlitchSound(vol);
     });
     if (glitchTimerRef.current != null) {
       window.clearTimeout(glitchTimerRef.current);
@@ -152,9 +158,10 @@ export function SobrePageClient() {
       const y = window.scrollY;
       if (y > SCROLL_START_PX) setScrollStarted(true);
 
+      const range = Math.max(380, Math.floor(window.innerHeight * 0.52));
+      const t = Math.min(1, Math.max(0, y / range));
+      scrollAttenRef.current = t;
       if (!reduceMotion) {
-        const range = Math.max(380, Math.floor(window.innerHeight * 0.52));
-        const t = Math.min(1, Math.max(0, y / range));
         setScrollAtten(t);
       }
     };
@@ -175,7 +182,7 @@ export function SobrePageClient() {
   return (
     <div
       className={cn(
-        "flex min-h-svh w-full min-w-0 max-w-full flex-col overflow-x-hidden",
+        "flex min-h-svh w-full min-w-0 max-w-full flex-col overflow-x-visible",
         "bg-background text-foreground antialiased",
       )}
     >
@@ -190,10 +197,10 @@ export function SobrePageClient() {
         <section
           className={cn(
             "flex min-h-[100svh] flex-col justify-center",
-            "pb-10 sm:pb-14",
+            "pb-3 sm:pb-4",
           )}
         >
-          <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-12 px-6 sm:px-8">
+          <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-7 px-6 sm:px-8">
             <div
               className="mx-auto w-full max-w-[600px] will-change-transform"
               style={{
@@ -235,7 +242,7 @@ export function SobrePageClient() {
 
             <div
               className={cn(
-                "mx-auto flex max-w-[28rem] flex-col items-center gap-1 text-center text-[#78716C] transition-opacity ease-out",
+                "mx-auto flex max-w-[min(36rem,calc(100vw-3rem))] flex-col items-center gap-1 text-center text-[#78716C] transition-opacity ease-out",
                 reduceMotion ? "duration-[600ms]" : "duration-[3400ms]",
                 captionOn ? "opacity-100" : "opacity-0",
               )}
@@ -259,7 +266,7 @@ export function SobrePageClient() {
           </div>
         </section>
 
-        <section className="mx-auto w-full max-w-[640px] px-6 pb-24 pt-4 sm:px-8">
+        <section className="mx-auto -mt-8 w-full max-w-[640px] overflow-x-visible overflow-y-visible px-6 pb-24 pt-0 sm:-mt-10 sm:px-8">
           <SobreExperienciaTimeline scrollUnlocked={scrollStarted} />
         </section>
       </main>
