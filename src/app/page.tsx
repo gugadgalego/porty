@@ -823,10 +823,22 @@ export default function Home() {
                 ? "translate3d(-14px, 0, 0)"
                 : "translate3d(0, 0, 0)",
             filter: isHero && navHidden ? "blur(2px)" : "blur(0)",
-            transition: isHero || navItemPhase === "exiting"
-              ? `opacity ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${HERO_NAV_REVEAL_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`
-              : `opacity ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}, transform ${NAV_ITEM_DURATION_MS}ms ${NAV_EASE}`,
-            transitionDelay: `${delayMs}ms`,
+            transitionProperty:
+              isHero || navItemPhase === "exiting"
+                ? "opacity, transform, filter"
+                : "opacity, transform",
+            transitionDuration:
+              isHero || navItemPhase === "exiting"
+                ? `${HERO_NAV_REVEAL_DURATION_MS}ms, ${HERO_NAV_REVEAL_DURATION_MS}ms, ${HERO_NAV_REVEAL_DURATION_MS}ms`
+                : `${NAV_ITEM_DURATION_MS}ms, ${NAV_ITEM_DURATION_MS}ms`,
+            transitionTimingFunction:
+              isHero || navItemPhase === "exiting"
+                ? `${INTRO_ENTRANCE_EASE}, ${INTRO_ENTRANCE_EASE}, ${INTRO_ENTRANCE_EASE}`
+                : `${NAV_EASE}, ${NAV_EASE}`,
+            transitionDelay:
+              isHero || navItemPhase === "exiting"
+                ? `${delayMs}ms, ${delayMs}ms, ${delayMs}ms`
+                : `${delayMs}ms, ${delayMs}ms`,
           }}
         >
           <Button
@@ -999,12 +1011,18 @@ export default function Home() {
                                 introVisible || prefersReducedMotion
                                   ? "blur(0)"
                                   : "blur(2px)",
-                              transition: prefersReducedMotion
-                                ? "opacity 260ms ease-out"
-                                : `opacity ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, transform ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}, filter ${INTRO_ENTRANCE_DURATION_MS}ms ${INTRO_ENTRANCE_EASE}`,
+                              transitionProperty: prefersReducedMotion
+                                ? "opacity"
+                                : "opacity, transform, filter",
+                              transitionDuration: prefersReducedMotion
+                                ? "260ms"
+                                : `${INTRO_ENTRANCE_DURATION_MS}ms, ${INTRO_ENTRANCE_DURATION_MS}ms, ${INTRO_ENTRANCE_DURATION_MS}ms`,
+                              transitionTimingFunction: prefersReducedMotion
+                                ? "ease-out"
+                                : `${INTRO_ENTRANCE_EASE}, ${INTRO_ENTRANCE_EASE}, ${INTRO_ENTRANCE_EASE}`,
                               transitionDelay:
                                 introVisible && !prefersReducedMotion
-                                  ? `${INTRO_ENTRANCE_DELAY_MS + idx * INTRO_ENTRANCE_STAGGER_MS}ms`
+                                  ? `${INTRO_ENTRANCE_DELAY_MS + idx * INTRO_ENTRANCE_STAGGER_MS}ms, ${INTRO_ENTRANCE_DELAY_MS + idx * INTRO_ENTRANCE_STAGGER_MS}ms, ${INTRO_ENTRANCE_DELAY_MS + idx * INTRO_ENTRANCE_STAGGER_MS}ms`
                                   : "0ms",
                             }}
                           >
