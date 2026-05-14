@@ -33,8 +33,9 @@ function PolaroidCard({
         CARD_SIZE,
         TILT,
         tiltClass,
-        "origin-top-left",
+        "origin-top-left select-none",
       )}
+      draggable={false}
     >
       <div className="relative h-full w-full shadow-[0_14px_32px_-8px_rgba(0,0,0,0.2)]">
         <div className="relative h-full w-full overflow-hidden border-[12px] border-white bg-neutral-100">
@@ -42,9 +43,10 @@ function PolaroidCard({
             src={src}
             alt={alt}
             fill
-            className="object-cover"
+            className="pointer-events-none object-cover select-none [-webkit-user-drag:none] [-webkit-touch-callout:none]"
             sizes="409px"
             quality={90}
+            draggable={false}
           />
         </div>
       </div>
