@@ -7,6 +7,10 @@ import { LanguageProvider } from "@/components/providers/language-provider";
 import { AppSiteBottomNav } from "@/components/app-site-bottom-nav";
 import { PullTab } from "@/components/pull-tab";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import {
+  PORTFOLIO_HOME_INTRO_SEEN_KEY,
+  PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY,
+} from "@/lib/site-bottom-nav-motion";
 
 const sourceSerif = Source_Serif_4({
   variable: "--font-serif",
@@ -44,6 +48,11 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var designKey=${JSON.stringify(PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY)};var introKey=${JSON.stringify(PORTFOLIO_HOME_INTRO_SEEN_KEY)};var params=new URLSearchParams(window.location.search);var wantsDesign=window.location.hash==="#design"||params.get("view")==="design"||window.sessionStorage.getItem(designKey)==="1";var introSeen=window.sessionStorage.getItem(introKey)==="1";if(wantsDesign||introSeen){document.documentElement.classList.add("porty-home-route-pending");}}catch(e){}})();`,
+          }}
+        />
         <ThemeProvider
           attribute="class"
           defaultTheme="light"

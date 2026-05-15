@@ -121,6 +121,9 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html.porty-home-route-pending [data-porty-home-root] {
+    opacity: 0 !important;
+  }
   body {
     @apply bg-background text-foreground;
   }
@@ -247,13 +250,5 @@
 
   .welcome-title-caret {
     animation: none !important;
-  }
-}
-
-/* Morph da grelha Design ao mudar colunas (View Transitions API). */
-@media (prefers-reduced-motion: no-preference) {
-  ::view-transition-group(*) {
-    animation-duration: 480ms;
-    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
   }
 }

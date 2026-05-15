@@ -13,8 +13,8 @@ import { cn } from "@/lib/utils";
 const FRAME =
   "flex w-full min-w-0 max-w-[min(40rem,calc(100vw-1.5rem))] flex-col items-stretch text-left";
 
-/** Espaço vertical entre secções (mais ar no estilo editorial). */
-const SECTION_GAP = "gap-8 sm:gap-10";
+/** Espaço vertical uniforme entre os itens da página de projeto. */
+const SECTION_GAP = "gap-6";
 
 /**
  * Página de projeto: um frame centrado (600px), conteúdo alinhado ao topo/esquerda;
@@ -53,17 +53,9 @@ export function DesignPaperProjectView({
         )}
       >
         <header className="w-full shrink-0 pt-12 sm:pt-20">
-          <p className="mb-4 font-mono text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+          <h1 className="m-0 w-full p-0 text-left font-serif text-[14px] font-normal italic leading-[1.3] text-foreground">
             <Link
-              href="/#design"
-              className="outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              design
-            </Link>
-          </p>
-          <h1 className="m-0 w-full p-0 text-balance text-left font-serif text-[clamp(1.875rem,5.5vw,2.75rem)] font-light leading-[1.06] tracking-[-0.035em] text-foreground">
-            <Link
-              href="/#design"
+              href="/?view=design#design"
               className={cn(
                 "inline-block outline-none transition-opacity hover:opacity-75",
                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -72,11 +64,6 @@ export function DesignPaperProjectView({
               {project.title}
             </Link>
           </h1>
-          {project.subtitle ? (
-            <p className="mt-4 font-mono text-[13px] font-normal tabular-nums tracking-tight text-muted-foreground">
-              {project.subtitle}
-            </p>
-          ) : null}
         </header>
 
         <div className="w-full min-w-0 shrink-0">

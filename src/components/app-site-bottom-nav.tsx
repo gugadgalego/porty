@@ -58,7 +58,7 @@ export function AppSiteBottomNav() {
 
   const sections = React.useMemo(
     () => [
-      { label: dictionary.sections.design, href: "/#design" },
+      { label: dictionary.sections.design, href: "/?view=design#design" },
       { label: dictionary.sections.dev, href: "/#dev" },
       { label: dictionary.sections.about, href: "/sobre" },
       { label: dictionary.sections.cv, href: "/#cv" },

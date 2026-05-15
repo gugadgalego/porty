@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import { dictionaries } from "@/lib/i18n";
 import { getMirrorDictionary } from "@/lib/intro-segments";
 import type { PortfolioProject } from "@/lib/portfolio-project";
 import {
+  PORTFOLIO_HOME_INTRO_SEEN_KEY,
   PORTFOLIO_NAV_ROUTE_TO_DESIGN_KEY,
   SITE_BOTTOM_NAV_DURATION_MS as NAV_ITEM_DURATION_MS,
   SITE_BOTTOM_NAV_STAGGER_MS as NAV_ITEM_STAGGER_MS,
@@ -41,10 +42,6 @@ const ROUTED_DESIGN_ENTER_FRAME_DELAY_MS = 32;
 
 /** Curva mais suave (acelera e desacelera devagar). */
 const NAV_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
-/** Grelha de projetos: entrada em cascata (baixo → cima, um a um). */
-const PROJECT_CARD_STAGGER_MS = 70;
-const PROJECT_CARD_DURATION_MS = 420;
-const PROJECT_CARD_EASE = "cubic-bezier(0.33, 1, 0.68, 1)";
 /** Largura mínima por slot quando existem várias colunas (slots + frames alinham-se a isto). */
 const DESIGN_GRID_MIN_SLOT_PX = 464;
 
@@ -76,6 +73,40 @@ function takeRouteToDesignNavFlag(): boolean {
     return false;
   }
 }
+
+function currentUrlWantsDesign(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("view") === "design" || window.location.hash === "#design";
+  } catch {
+    return window.location.hash === "#design";
+  }
+}
+
+function wantsDesignFromSearchParams(searchParams: {
+  get(name: string): string | null;
+}): boolean {
+  return searchParams.get("view") === "design" || currentUrlWantsDesign();
+}
+
+function hasHomeIntroPlayed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.sessionStorage.getItem(PORTFOLIO_HOME_INTRO_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberHomeIntroPlayed(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(PORTFOLIO_HOME_INTRO_SEEN_KEY, "1");
+  } catch {
+    /* sessionStorage pode estar indisponível */
+  }
+}
 /** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
 const INTRO_ENTRANCE_DURATION_MS = 560;
 const INTRO_ENTRANCE_STAGGER_MS = 92;
@@ -91,6 +122,10 @@ const INTRO_BODY_STACK_CLASS = cn(
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialWantsDesignRef = React.useRef(
+    wantsDesignFromSearchParams(searchParams),
+  );
   const { dictionary, locale, toggleLocale, ready: languageReady } =
     useLanguage();
   const { resolvedTheme, setTheme } = useTheme();
@@ -104,11 +139,18 @@ export default function Home() {
     : dictionary.themeToggleToDark;
 
   const welcomeFull = dictionary.welcome;
-  const [introVisible, setIntroVisible] = React.useState(false);
-  const [chromeVisible, setChromeVisible] = React.useState(false);
+  const [homeIntroPlayed, setHomeIntroPlayed] =
+    React.useState(hasHomeIntroPlayed);
+  const [introVisible, setIntroVisible] =
+    React.useState(hasHomeIntroPlayed);
+  const [chromeVisible, setChromeVisible] =
+    React.useState(hasHomeIntroPlayed);
   /** Mantém o mesmo timing que `chromeVisible` nesta branch (intro scramble; sem etapa braille). */
   const [heroNavVisible, setHeroNavVisible] = React.useState(false);
-  const [projectsView, setProjectsView] = React.useState(false);
+  const [projectsView, setProjectsView] =
+    React.useState(initialWantsDesignRef.current);
+  const shouldSkipHomeIntro = homeIntroPlayed || projectsView;
+  const [routeModeReady, setRouteModeReady] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
   const prevWelcomeRef = React.useRef<string | null>(null);
   /** Troca PT ↔ EN no welcome após o primeiro typewriter: apagar + redigitar. */
@@ -134,7 +176,7 @@ export default function Home() {
   const measureEnParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
 
   const [welcomeTypingComplete, setWelcomeTypingComplete] =
-    React.useState(false);
+    React.useState(hasHomeIntroPlayed);
   const [frozenWelcomeForTypewriter, setFrozenWelcomeForTypewriter] =
     React.useState<string | null>(null);
 
@@ -146,12 +188,22 @@ export default function Home() {
    */
   React.useEffect(() => {
     if (!languageReady) return;
+    if (shouldSkipHomeIntro) return;
     if (welcomeTypingComplete) return;
     setFrozenWelcomeForTypewriter(dictionary.welcome);
-  }, [languageReady, dictionary.welcome, welcomeTypingComplete]);
+  }, [
+    languageReady,
+    dictionary.welcome,
+    welcomeTypingComplete,
+    shouldSkipHomeIntro,
+  ]);
 
   React.useEffect(() => {
     if (!languageReady) return;
+    if (shouldSkipHomeIntro) {
+      setWelcomeTypingComplete(true);
+      return;
+    }
     if (prefersReducedMotion) {
       setWelcomeTypingComplete(true);
       return;
@@ -169,6 +221,7 @@ export default function Home() {
     prefersReducedMotion,
     welcomeTypingComplete,
     frozenWelcomeForTypewriter,
+    shouldSkipHomeIntro,
   ]);
 
   const bottomNavRef = React.useRef<HTMLElement | null>(null);
@@ -181,11 +234,9 @@ export default function Home() {
   }, [designGridCols]);
   /** Depois do stagger-in dos botões no rodapé: libera a grid (cascata dos cards). */
   const [projectNavReadyForGrid, setProjectNavReadyForGrid] =
-    React.useState(false);
+    React.useState(initialWantsDesignRef.current);
   /** Altura medida da barra fixa; padding do scroll = isto, para o conteúdo nunca passar “por baixo” da nav. */
   const [projectNavBlockPx, setProjectNavBlockPx] = React.useState(0);
-  /** Após 1 rAF, dispara a cascata dos cartões (só com nav já encostada). */
-  const [projectCardsRevealed, setProjectCardsRevealed] = React.useState(false);
   const [projects, setProjects] = React.useState<PortfolioProject[]>([]);
 
   React.useEffect(() => {
@@ -221,10 +272,26 @@ export default function Home() {
    */
   const [navItemPhase, setNavItemPhase] = React.useState<
     "idle" | "exiting" | "entering" | "entered"
-  >("idle");
+  >(() => (initialWantsDesignRef.current ? "entered" : "idle"));
   const navTransitionTimersRef = React.useRef<number[]>([]);
   /** Saída do hero antes de `/sobre` (cancelável ao abrir Design). */
   const heroSobreExitArmedRef = React.useRef(false);
+
+  React.useLayoutEffect(() => {
+    if (wantsDesignFromSearchParams(searchParams)) {
+      setProjectsView(true);
+      setProjectNavReadyForGrid(true);
+      setNavItemPhase("entered");
+    }
+    if (hasHomeIntroPlayed()) {
+      setHomeIntroPlayed(true);
+      setIntroVisible(true);
+      setChromeVisible(true);
+      setWelcomeTypingComplete(true);
+    }
+    document.documentElement.classList.remove("porty-home-route-pending");
+    setRouteModeReady(true);
+  }, [searchParams]);
 
   const clearNavTransitionTimers = React.useCallback(() => {
     for (const id of navTransitionTimersRef.current) {
@@ -236,26 +303,6 @@ export default function Home() {
       setNavItemPhase("idle");
     }
   }, []);
-
-  React.useEffect(() => {
-    if (!projectNavReadyForGrid) {
-      setProjectCardsRevealed(false);
-      return;
-    }
-    if (prefersReducedMotion) {
-      setProjectCardsRevealed(true);
-      return;
-    }
-    let raf0 = 0;
-    let raf1 = 0;
-    raf0 = requestAnimationFrame(() => {
-      raf1 = requestAnimationFrame(() => setProjectCardsRevealed(true));
-    });
-    return () => {
-      cancelAnimationFrame(raf0);
-      cancelAnimationFrame(raf1);
-    };
-  }, [projectNavReadyForGrid, prefersReducedMotion]);
 
   React.useLayoutEffect(() => {
     const el = designGridRef.current;
@@ -274,20 +321,8 @@ export default function Home() {
       );
       if (nextCols === designGridColsRef.current) return;
 
-      const commit = () => {
-        setDesignGridCols(nextCols);
-        designGridColsRef.current = nextCols;
-      };
-
-      if (
-        prefersReducedMotion ||
-        typeof document.startViewTransition !== "function"
-      ) {
-        commit();
-        return;
-      }
-
-      document.startViewTransition(commit);
+      setDesignGridCols(nextCols);
+      designGridColsRef.current = nextCols;
     };
     read();
     const ro = new ResizeObserver(() => {
@@ -321,6 +356,11 @@ export default function Home() {
 
   React.useEffect(() => {
     if (!languageReady || !welcomeTypingComplete) return;
+    if (shouldSkipHomeIntro) {
+      setIntroVisible(true);
+      setChromeVisible(true);
+      return;
+    }
     const introT = window.setTimeout(
       () => setIntroVisible(true),
       INTRO_REVEAL_DELAY_MS,
@@ -333,11 +373,17 @@ export default function Home() {
       window.clearTimeout(introT);
       window.clearTimeout(chromeT);
     };
-  }, [languageReady, welcomeTypingComplete]);
+  }, [languageReady, welcomeTypingComplete, shouldSkipHomeIntro]);
 
   React.useEffect(() => {
     setHeroNavVisible(chromeVisible);
   }, [chromeVisible]);
+
+  React.useEffect(() => {
+    if (!chromeVisible || homeIntroPlayed || projectsView) return;
+    rememberHomeIntroPlayed();
+    setHomeIntroPlayed(true);
+  }, [chromeVisible, homeIntroPlayed, projectsView]);
 
   React.useEffect(() => {
     if (!heroNavVisible) return;
@@ -480,7 +526,6 @@ export default function Home() {
 
     clearNavTransitionTimers();
     setProjectNavReadyForGrid(false);
-    setProjectCardsRevealed(false);
     setNavItemPhase("exiting");
     setProjectsView(true);
 
@@ -559,7 +604,6 @@ export default function Home() {
 
       clearNavTransitionTimers();
       setProjectNavReadyForGrid(false);
-      setProjectCardsRevealed(false);
       setNavItemPhase("exiting");
 
       const id = window.setTimeout(() => {
@@ -582,14 +626,14 @@ export default function Home() {
   React.useEffect(() => {
     if (typeof window === "undefined") return;
     const syncHashToDesignGrid = () => {
-      if (window.location.hash !== "#design") return;
+      if (!wantsDesignFromSearchParams(searchParams)) return;
       openDesignGrid();
     };
     syncHashToDesignGrid();
     window.addEventListener("hashchange", syncHashToDesignGrid);
     return () =>
       window.removeEventListener("hashchange", syncHashToDesignGrid);
-  }, [openDesignGrid]);
+  }, [openDesignGrid, searchParams]);
 
   const renderIntro = React.useCallback(
     (paragraphRaw: string, idx: number) => (
@@ -870,7 +914,13 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-background">
+    <div
+      data-porty-home-root
+      className={cn(
+        "flex h-svh min-h-0 flex-col overflow-hidden bg-background",
+        routeModeReady ? "opacity-100" : "opacity-0",
+      )}
+    >
       <header
         className={cn(
           "fixed inset-x-0 top-0 z-40 flex w-full items-center justify-between bg-background px-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-2",
@@ -927,7 +977,7 @@ export default function Home() {
                 aria-label={welcomeFull}
                 className="w-full text-center font-serif text-[14px] italic leading-[1.3] text-foreground"
               >
-                {prefersReducedMotion ? (
+                {prefersReducedMotion || shouldSkipHomeIntro ? (
                   <span aria-hidden="true">{welcomeFull}</span>
                 ) : (
                   <TypeAnimation
@@ -1088,13 +1138,11 @@ export default function Home() {
                 </div>
               ) : (
                 (() => {
-                  const gridItems = projects.filter((p) => p?.id?.trim());
-                  const n = gridItems.length;
-                  const gridCols = Math.max(1, designGridCols);
-                  const rowCount = Math.max(1, Math.ceil(n / gridCols));
-                  const lastRowIdx = rowCount - 1;
-                  const trailingPlaceholders =
-                    n === 0 ? 0 : (gridCols - (n % gridCols)) % gridCols;
+	                  const gridItems = projects.filter((p) => p?.id?.trim());
+	                  const n = gridItems.length;
+	                  const gridCols = Math.max(1, designGridCols);
+	                  const trailingPlaceholders =
+	                    n === 0 ? 0 : (gridCols - (n % gridCols)) % gridCols;
 
                   return (
                     <div
@@ -1104,14 +1152,7 @@ export default function Home() {
                         gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
                       }}
                     >
-                      {gridItems.map((p, serial) => {
-                        const row = Math.floor(serial / gridCols);
-                        const col = serial % gridCols;
-                        const bottomToTopI = (lastRowIdx - row) * gridCols + col;
-                        const cardIn =
-                          projectNavReadyForGrid &&
-                          (prefersReducedMotion || projectCardsRevealed);
-
+	                      {gridItems.map((p) => {
                         return (
                           <Link
                             key={p.id}
@@ -1119,25 +1160,9 @@ export default function Home() {
                             prefetch={false}
                             className={cn(
                               "relative block min-h-0 w-full min-w-0 outline-none",
-                              "transition-[transform,opacity] motion-reduce:transition-none",
                               "focus-visible:z-10",
                               "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                              cardIn
-                                ? "translate-y-0 opacity-100"
-                                : "translate-y-7 opacity-0",
                             )}
-                            style={{
-                              viewTransitionName: `design-slot-${serial}`,
-                              transitionDuration: `${PROJECT_CARD_DURATION_MS}ms`,
-                              transitionTimingFunction: PROJECT_CARD_EASE,
-                              transitionProperty: "transform, opacity",
-                              transitionDelay:
-                                projectNavReadyForGrid &&
-                                projectCardsRevealed &&
-                                !prefersReducedMotion
-                                  ? `${bottomToTopI * PROJECT_CARD_STAGGER_MS}ms`
-                                  : "0ms",
-                            } as React.CSSProperties}
                           >
                             <span className="sr-only">
                               {p.title}
@@ -1165,7 +1190,6 @@ export default function Home() {
                           key={`design-grid-frame-${i}`}
                           aria-hidden
                           role="presentation"
-                          style={{ viewTransitionName: "none" } as React.CSSProperties}
                           className="pointer-events-none invisible min-h-[320px] min-w-0 w-full shrink-0 select-none"
                         />
                       ))}
