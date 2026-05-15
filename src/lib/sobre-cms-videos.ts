@@ -47,6 +47,21 @@ export function isSafeVideoUrl(url: string): boolean {
   return isSafeRelativeVideoUrl(t);
 }
 
+export async function isAvailableSiteVideoUrl(url: string): Promise<boolean> {
+  const t = url.trim();
+  if (!isSafeVideoUrl(t)) return false;
+  if (t.startsWith("https://")) return true;
+
+  const pathOnly = t.split("?")[0]?.split("#")[0] ?? "";
+  const publicPath = path.join(process.cwd(), "public", pathOnly);
+  try {
+    const stat = await fs.stat(publicPath);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function normalizeSobreVideoInput(
   v: unknown,
   index: number,

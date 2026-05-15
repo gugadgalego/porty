@@ -214,6 +214,8 @@ export type SobreVideoShaderFrameProps = {
   loop?: boolean;
   /** Chamado quando o clip termina (só relevante com `loop={false}`). */
   onClipEnded?: () => void;
+  /** Chamado quando o vídeo não carrega. */
+  onMediaError?: () => void;
   /**
    * Quando o frame está oculto (ex. outro slide ativo): pausa e liberta CPU; o nó mantém-se montado.
    */
@@ -226,6 +228,7 @@ export function SobreVideoShaderFrame({
   volumeAttenuation = 0,
   loop = true,
   onClipEnded,
+  onMediaError,
   presentationHidden = false,
 }: SobreVideoShaderFrameProps) {
   const audioVideoRef = useRef<HTMLVideoElement>(null);
@@ -235,6 +238,8 @@ export function SobreVideoShaderFrame({
   onMediaReadyRef.current = onMediaReady;
   const onClipEndedRef = useRef(onClipEnded);
   onClipEndedRef.current = onClipEnded;
+  const onMediaErrorRef = useRef(onMediaError);
+  onMediaErrorRef.current = onMediaError;
   const volumeAttenuationRef = useRef(volumeAttenuation);
   volumeAttenuationRef.current = volumeAttenuation;
   const wasPlayingBeforeHideRef = useRef(false);
@@ -325,7 +330,11 @@ export function SobreVideoShaderFrame({
         queueMicrotask(() => onMediaReadyRef.current?.());
       }
     };
+    const onError = () => {
+      onMediaErrorRef.current?.();
+    };
     el.addEventListener("loadeddata", onLoaded);
+    el.addEventListener("error", onError);
     if (el.readyState >= 1) onLoaded();
 
     const onPageHide = () => persistTime();
@@ -333,6 +342,7 @@ export function SobreVideoShaderFrame({
 
     return () => {
       el.removeEventListener("loadeddata", onLoaded);
+      el.removeEventListener("error", onError);
       window.removeEventListener("pagehide", onPageHide);
       persistTime();
     };
@@ -442,6 +452,7 @@ export function SobreVideoShaderFrame({
         muted={muted}
         loop={loop}
         playsInline
+        preload="auto"
       />
 
       {/*

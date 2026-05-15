@@ -92,7 +92,15 @@ function wantsDesignFromSearchParams(searchParams: {
 
 function hasHomeIntroPlayed(): boolean {
   if (typeof window === "undefined") return false;
+  const plainHome =
+    window.location.pathname === "/" &&
+    window.location.search === "" &&
+    window.location.hash === "";
   try {
+    if (plainHome) {
+      window.sessionStorage.removeItem(PORTFOLIO_HOME_INTRO_SEEN_KEY);
+      return false;
+    }
     return window.sessionStorage.getItem(PORTFOLIO_HOME_INTRO_SEEN_KEY) === "1";
   } catch {
     return false;
@@ -107,11 +115,24 @@ function rememberHomeIntroPlayed(): void {
     /* sessionStorage pode estar indisponível */
   }
 }
+
+function dismissHomeIntroAfterNavigation(): void {
+  rememberHomeIntroPlayed();
+}
+
+function replaceUrlWithDesignGridRoute(): void {
+  if (typeof window === "undefined") return;
+  const targetPath = "/?view=design#design";
+  const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (currentPath === targetPath) return;
+  window.history.replaceState(window.history.state, "", targetPath);
+}
 /** Altura do bloco de intro = sempre max(PT, EN) nos refs off-screen — zero shift na troca de idioma / scramble. */
 const INTRO_ENTRANCE_DURATION_MS = 560;
 const INTRO_ENTRANCE_STAGGER_MS = 92;
 const INTRO_ENTRANCE_DELAY_MS = 40;
 const INTRO_ENTRANCE_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+const INTRO_EXIT_UNMOUNT_DELAY_MS = 700;
 const HERO_NAV_REVEAL_DURATION_MS = 520;
 const HERO_NAV_REVEAL_STAGGER_MS = 72;
 
@@ -123,9 +144,6 @@ const INTRO_BODY_STACK_CLASS = cn(
 export default function Home() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialWantsDesignRef = React.useRef(
-    wantsDesignFromSearchParams(searchParams),
-  );
   const { dictionary, locale, toggleLocale, ready: languageReady } =
     useLanguage();
   const { resolvedTheme, setTheme } = useTheme();
@@ -139,16 +157,13 @@ export default function Home() {
     : dictionary.themeToggleToDark;
 
   const welcomeFull = dictionary.welcome;
-  const [homeIntroPlayed, setHomeIntroPlayed] =
-    React.useState(hasHomeIntroPlayed);
-  const [introVisible, setIntroVisible] =
-    React.useState(hasHomeIntroPlayed);
-  const [chromeVisible, setChromeVisible] =
-    React.useState(hasHomeIntroPlayed);
+  const [homeIntroPlayed, setHomeIntroPlayed] = React.useState(false);
+  const [introVisible, setIntroVisible] = React.useState(false);
+  const [introContentLeaving, setIntroContentLeaving] = React.useState(false);
+  const [chromeVisible, setChromeVisible] = React.useState(false);
   /** Mantém o mesmo timing que `chromeVisible` nesta branch (intro scramble; sem etapa braille). */
   const [heroNavVisible, setHeroNavVisible] = React.useState(false);
-  const [projectsView, setProjectsView] =
-    React.useState(initialWantsDesignRef.current);
+  const [projectsView, setProjectsView] = React.useState(false);
   const shouldSkipHomeIntro = homeIntroPlayed || projectsView;
   const [routeModeReady, setRouteModeReady] = React.useState(false);
   const [revealKey, setRevealKey] = React.useState(0);
@@ -176,7 +191,7 @@ export default function Home() {
   const measureEnParaRefs = React.useRef<(HTMLParagraphElement | null)[]>([]);
 
   const [welcomeTypingComplete, setWelcomeTypingComplete] =
-    React.useState(hasHomeIntroPlayed);
+    React.useState(false);
   const [frozenWelcomeForTypewriter, setFrozenWelcomeForTypewriter] =
     React.useState<string | null>(null);
 
@@ -234,7 +249,7 @@ export default function Home() {
   }, [designGridCols]);
   /** Depois do stagger-in dos botões no rodapé: libera a grid (cascata dos cards). */
   const [projectNavReadyForGrid, setProjectNavReadyForGrid] =
-    React.useState(initialWantsDesignRef.current);
+    React.useState(false);
   /** Altura medida da barra fixa; padding do scroll = isto, para o conteúdo nunca passar “por baixo” da nav. */
   const [projectNavBlockPx, setProjectNavBlockPx] = React.useState(0);
   const [projects, setProjects] = React.useState<PortfolioProject[]>([]);
@@ -272,8 +287,9 @@ export default function Home() {
    */
   const [navItemPhase, setNavItemPhase] = React.useState<
     "idle" | "exiting" | "entering" | "entered"
-  >(() => (initialWantsDesignRef.current ? "entered" : "idle"));
+  >("idle");
   const navTransitionTimersRef = React.useRef<number[]>([]);
+  const introExitTimerRef = React.useRef<number | null>(null);
   /** Saída do hero antes de `/sobre` (cancelável ao abrir Design). */
   const heroSobreExitArmedRef = React.useRef(false);
 
@@ -289,7 +305,6 @@ export default function Home() {
       setChromeVisible(true);
       setWelcomeTypingComplete(true);
     }
-    document.documentElement.classList.remove("porty-home-route-pending");
     setRouteModeReady(true);
   }, [searchParams]);
 
@@ -303,6 +318,25 @@ export default function Home() {
       setNavItemPhase("idle");
     }
   }, []);
+
+  const clearIntroExitTimer = React.useCallback(() => {
+    if (introExitTimerRef.current == null) return;
+    window.clearTimeout(introExitTimerRef.current);
+    introExitTimerRef.current = null;
+  }, []);
+
+  const startIntroContentExit = React.useCallback(() => {
+    clearIntroExitTimer();
+    setWelcomeTypingComplete(true);
+    setIntroContentLeaving(true);
+    setIntroVisible(false);
+    introExitTimerRef.current = window.setTimeout(() => {
+      setIntroContentLeaving(false);
+      introExitTimerRef.current = null;
+    }, INTRO_EXIT_UNMOUNT_DELAY_MS);
+  }, [clearIntroExitTimer]);
+
+  React.useEffect(() => clearIntroExitTimer, [clearIntroExitTimer]);
 
   React.useLayoutEffect(() => {
     const el = designGridRef.current;
@@ -357,8 +391,10 @@ export default function Home() {
   React.useEffect(() => {
     if (!languageReady || !welcomeTypingComplete) return;
     if (shouldSkipHomeIntro) {
-      setIntroVisible(true);
-      setChromeVisible(true);
+      if (!introContentLeaving) {
+        setIntroVisible(true);
+        setChromeVisible(true);
+      }
       return;
     }
     const introT = window.setTimeout(
@@ -373,17 +409,16 @@ export default function Home() {
       window.clearTimeout(introT);
       window.clearTimeout(chromeT);
     };
-  }, [languageReady, welcomeTypingComplete, shouldSkipHomeIntro]);
+  }, [
+    languageReady,
+    welcomeTypingComplete,
+    shouldSkipHomeIntro,
+    introContentLeaving,
+  ]);
 
   React.useEffect(() => {
     setHeroNavVisible(chromeVisible);
   }, [chromeVisible]);
-
-  React.useEffect(() => {
-    if (!chromeVisible || homeIntroPlayed || projectsView) return;
-    rememberHomeIntroPlayed();
-    setHomeIntroPlayed(true);
-  }, [chromeVisible, homeIntroPlayed, projectsView]);
 
   React.useEffect(() => {
     if (!heroNavVisible) return;
@@ -511,13 +546,24 @@ export default function Home() {
    * (links externos, página de projeto, refresh com hash). O botão
    * «Design» no hero continua com `preventDefault` + esta função.
    */
-  const openDesignGrid = React.useCallback(() => {
+  const openDesignGrid = React.useCallback((options?: { animateIntroExit?: boolean }) => {
     if (projectsView) return;
+    const animateIntroExit = options?.animateIntroExit === true;
+    dismissHomeIntroAfterNavigation();
+    setHomeIntroPlayed(true);
+    if (animateIntroExit) {
+      startIntroContentExit();
+    } else {
+      clearIntroExitTimer();
+      setIntroContentLeaving(false);
+      replaceUrlWithDesignGridRoute();
+    }
     const enteredAfterRouteExit = takeRouteToDesignNavFlag();
     if (
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
     ) {
+      replaceUrlWithDesignGridRoute();
       setProjectsView(true);
       setProjectNavReadyForGrid(true);
       setNavItemPhase("entered");
@@ -535,6 +581,7 @@ export default function Home() {
       : portfolioNavExitGateMs(count);
 
     const tEnter = window.setTimeout(() => {
+      replaceUrlWithDesignGridRoute();
       setNavItemPhase("entering");
       const enterTotalMs = portfolioNavEnterSequenceMs(count);
       const tReady = window.setTimeout(() => {
@@ -544,12 +591,18 @@ export default function Home() {
       navTransitionTimersRef.current.push(tReady);
     }, enterDelayMs);
     navTransitionTimersRef.current.push(tEnter);
-  }, [projectsView, clearNavTransitionTimers, sections.length]);
+  }, [
+    projectsView,
+    clearIntroExitTimer,
+    clearNavTransitionTimers,
+    sections.length,
+    startIntroContentExit,
+  ]);
 
   const handleDesignClick = React.useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       event.preventDefault();
-      openDesignGrid();
+      openDesignGrid({ animateIntroExit: true });
     },
     [openDesignGrid],
   );
@@ -557,8 +610,14 @@ export default function Home() {
   const handleHeroSobreClick = React.useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
       if (projectsView) return;
-      if (prefersReducedMotion) return;
       event.preventDefault();
+      dismissHomeIntroAfterNavigation();
+      setHomeIntroPlayed(true);
+      startIntroContentExit();
+      if (prefersReducedMotion) {
+        void router.push("/sobre");
+        return;
+      }
       clearNavTransitionTimers();
       heroSobreExitArmedRef.current = true;
       setNavItemPhase("exiting");
@@ -575,6 +634,7 @@ export default function Home() {
       clearNavTransitionTimers,
       router,
       sections.length,
+      startIntroContentExit,
     ],
   );
 
@@ -597,6 +657,8 @@ export default function Home() {
       if (url.pathname === "/" && url.hash === "#design") return;
 
       const targetHref = `${url.pathname}${url.search}${url.hash}`;
+      dismissHomeIntroAfterNavigation();
+      setHomeIntroPlayed(true);
       if (prefersReducedMotion) {
         router.push(targetHref);
         return;
@@ -810,6 +872,11 @@ export default function Home() {
   }, []);
 
   const navContainerClass = SITE_BOTTOM_NAV_CONTAINER_CLASS;
+  const shouldMountIntroBody =
+    (!projectsView && !homeIntroPlayed) || introContentLeaving;
+  const shouldMountHeroNav = !projectsView || navItemPhase === "exiting";
+  const introLayoutExpanded = introVisible || introContentLeaving;
+  const welcomeVisible = !welcomeTypingComplete || introVisible;
 
   const renderNavButtons = (opts: {
     scope: "hero" | "bottom";
@@ -955,27 +1022,33 @@ export default function Home() {
 
       <main className="relative flex min-h-0 flex-1 flex-col pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
         {/* HERO: layout totalmente estático. A nav do hero só muda `opacity` dos botões. */}
+        {shouldMountIntroBody || shouldMountHeroNav ? (
         <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 [scrollbar-gutter:stable]">
           <div
             className={cn(
               "flex w-full max-w-[20rem] flex-col items-center py-6",
-              introVisible ? "gap-6" : "gap-0",
+              introLayoutExpanded ? "gap-6" : "gap-0",
             )}
           >
+            {shouldMountIntroBody ? (
             <div
               ref={heroBodyRef}
-              className={cn(
-                "flex w-full flex-col items-center",
-                introVisible ? "gap-6" : "gap-0",
-                projectsView ? "pointer-events-none" : "pointer-events-auto",
-              )}
+                className={cn(
+                  "flex w-full flex-col items-center",
+                  introLayoutExpanded ? "gap-6" : "gap-0",
+                  projectsView ? "pointer-events-none" : "pointer-events-auto",
+                )}
               style={{
                 minHeight: heroBodyMinPx > 0 ? `${heroBodyMinPx}px` : undefined,
               }}
             >
               <h1
                 aria-label={welcomeFull}
-                className="w-full text-center font-serif text-[14px] italic leading-[1.3] text-foreground"
+                className="w-full text-center font-serif text-[14px] italic leading-[1.3] text-foreground transition-[opacity,filter] duration-[560ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                style={{
+                  opacity: welcomeVisible ? 1 : 0,
+                  filter: welcomeVisible ? "blur(0)" : "blur(2px)",
+                }}
               >
                 {prefersReducedMotion || shouldSkipHomeIntro ? (
                   <span aria-hidden="true">{welcomeFull}</span>
@@ -1018,7 +1091,7 @@ export default function Home() {
                   "grid w-full",
                   "transition-[grid-template-rows] duration-[640ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
                   "motion-reduce:transition-none",
-                  introVisible ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                  introLayoutExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                 )}
               >
                 <div className="min-h-0 overflow-hidden">
@@ -1085,6 +1158,15 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            ) : shouldMountHeroNav ? (
+              <div
+                aria-hidden="true"
+                className="w-full"
+                style={{
+                  minHeight: heroBodyMinPx > 0 ? `${heroBodyMinPx}px` : undefined,
+                }}
+              />
+            ) : null}
 
             <nav
               aria-label="Secções do site"
@@ -1099,6 +1181,7 @@ export default function Home() {
             </nav>
           </div>
         </div>
+        ) : null}
 
         <section
           id="design"
@@ -1218,7 +1301,7 @@ export default function Home() {
       </main>
 
       {/* Medição invisível (PT/EN) para animar min-height só do idioma ativo e manter o hero recentralizado. */}
-      {introVisible && (
+      {shouldMountIntroBody && introVisible && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute left-[-9999px] top-0 w-full max-w-[20rem]"

@@ -43,10 +43,23 @@ export function SobrePageClient() {
   const captionTimerRef = useRef<number | null>(null);
   /** Sincronizado com o scroll — usado no som de estática sem recriar `handleClipEnded` a cada frame. */
   const scrollAttenRef = useRef(0);
+  const failedVideoUrlsRef = useRef(new Set<string>());
 
   const onMediaReady = useCallback(() => {
     setMediaReady(true);
   }, []);
+
+  const pickPlayableVideo = useCallback(
+    (except: string | null = null) => {
+      const failed = failedVideoUrlsRef.current;
+      const playable = videoCandidates.filter((u) => !failed.has(u));
+      if (playable.length === 0) return SOBRE_FALLBACK_VIDEO_URL;
+      return except
+        ? pickRandomSobreVideoUrlExcept(playable, except)
+        : pickRandomSobreVideoUrl(playable);
+    },
+    [videoCandidates],
+  );
 
   const glitchTimerRef = useRef<number | null>(null);
 
@@ -68,9 +81,7 @@ export function SobrePageClient() {
 
     const swap = () => {
       setVideoSrc((cur) =>
-        cur
-          ? pickRandomSobreVideoUrlExcept(videoCandidates, cur)
-          : pickRandomSobreVideoUrl(videoCandidates),
+        pickPlayableVideo(cur),
       );
       clipTransitionRef.current = false;
     };
@@ -96,7 +107,18 @@ export function SobrePageClient() {
       swap();
       setStaticGlitch(false);
     }, TV_STATIC_GLITCH_MS);
-  }, [reduceMotion, videoCandidates]);
+  }, [pickPlayableVideo, reduceMotion, videoCandidates.length]);
+
+  const handleMediaError = useCallback(() => {
+    setVideoSrc((cur) => {
+      if (!cur) return SOBRE_FALLBACK_VIDEO_URL;
+      failedVideoUrlsRef.current.add(cur);
+      const next = pickPlayableVideo(cur);
+      return next === cur ? SOBRE_FALLBACK_VIDEO_URL : next;
+    });
+    clipTransitionRef.current = false;
+    setStaticGlitch(false);
+  }, [pickPlayableVideo]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -113,6 +135,7 @@ export function SobrePageClient() {
         const trimmed = urls.map((u) => u.trim()).filter(Boolean);
         const list =
           trimmed.length > 0 ? trimmed : [SOBRE_FALLBACK_VIDEO_URL];
+        failedVideoUrlsRef.current.clear();
         setVideoCandidates(list);
         setVideoSrc(pickRandomSobreVideoUrl(list));
       } catch (e) {
@@ -222,6 +245,7 @@ export function SobrePageClient() {
                           ? handleClipEnded
                           : undefined
                       }
+                      onMediaError={handleMediaError}
                     />
                     <SobreTvStaticOverlay
                       active={staticGlitch && !reduceMotion}
